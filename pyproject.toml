@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-council"
 version = "0.1.0"
-description = "Claude、GPT、Gemini、ローカルLLMが自律的に討論・合議するWebアプリ"
+description = "Claude、GPT、Gemini、ローカルLLMが対等に議論しながら、プロンプトへの回答を共同で作り上げるWebアプリ"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

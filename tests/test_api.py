@@ -24,7 +24,7 @@ def client() -> TestClient:
 
 def body(provider="scripted", **overrides):
     data = {
-        "topic": "テストの議題",
+        "prompt": "テストのプロンプト",
         "rounds": 1,
         "participants": [{"name": "A", "provider": provider}, {"name": "B", "provider": provider}],
     }
@@ -56,32 +56,32 @@ def test_list_providers():
     }
 
 
-def test_debate_streams_events_and_uses_default_model():
-    with client().stream("POST", "/api/debate", json=body()) as res:
+def test_council_streams_events_and_uses_default_model():
+    with client().stream("POST", "/api/council", json=body()) as res:
         assert res.status_code == 200
         assert res.headers["content-type"].startswith("text/event-stream")
         events = parse_sse(res.read().decode())
 
-    assert events[0]["type"] == "debate_start"
+    assert events[0]["type"] == "session_start"
     participants = events[0]["participants"]
     assert [p["id"] for p in participants] == ["p1", "p2"]
     assert {p["model"] for p in participants} == {"scripted-1"}
     assert all("role" not in p for p in participants)  # 役割による区別はない
-    assert events[-1]["type"] == "debate_end"
+    assert events[-1]["type"] == "session_end"
     assert events[-1]["status"] == "completed"
 
 
 def test_unavailable_provider_is_rejected_up_front():
-    res = client().post("/api/debate", json=body(provider="offline"))
+    res = client().post("/api/council", json=body(provider="offline"))
     assert res.status_code == 400
     assert "APIキーが未設定です" in res.json()["detail"]
 
 
 def test_unknown_provider_is_rejected():
-    res = client().post("/api/debate", json=body(provider="nope"))
+    res = client().post("/api/council", json=body(provider="nope"))
     assert res.status_code == 400
 
 
 def test_invalid_config_is_rejected():
-    res = client().post("/api/debate", json=body(topic="   "))
+    res = client().post("/api/council", json=body(prompt="   "))
     assert res.status_code == 422

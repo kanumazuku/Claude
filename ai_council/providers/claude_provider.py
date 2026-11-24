@@ -89,7 +89,7 @@ class ClaudeProvider(Provider):
             raise ProviderError("Claudeに接続できません。ネットワークを確認してください。") from e
 
         if final.stop_reason == "refusal":
-            raise ProviderError("Claudeがこの発言を辞退しました。議題を変えて試してください。")
+            raise ProviderError("Claudeがこの発言を辞退しました。プロンプトを変えて試してください。")
 
 
 def _dedupe(items: list[str]) -> list[str]:

@@ -11,36 +11,33 @@ const PROVIDER_COLORS = {
 };
 const REAL_PROVIDERS = ["claude", "openai", "gemini", "ollama"];
 
-const TOPIC_EXAMPLES = [
-  "日本の企業は週休3日制を導入すべきか",
-  "小学校の授業で生成AIを積極的に使うべきか",
-  "都市部の自家用車は段階的に減らすべきか",
-  "リモートワークを働き方の基本にすべきか",
+const PROMPT_EXAMPLES = [
+  "新入社員向けに、生成AIを安全に使うためのガイドラインを作ってください",
+  "小学生にもわかるように、地球温暖化のしくみを説明してください",
+  "地方の商店街を活性化するアイデアを、実行手順つきで5つ提案してください",
+  "リモートワークのメリットとデメリットを、経営者向けに800字でまとめてください",
 ];
 
 const PRESET_PARTICIPANTS = [
-  { name: "推進派", stance: "議題に前向きな立場。新しい挑戦がもたらす可能性や利点を重視する。" },
-  { name: "慎重派", stance: "議題に慎重な立場。リスクや副作用、影響を受ける人への配慮を重視する。" },
-  { name: "現実派", stance: "中立的な立場。費用、実現可能性、具体的な実行手順を重視する。" },
-  { name: "当事者目線", stance: "議題によって最も影響を受ける人の目線で、生活の実感から意見を述べる。" },
-  { name: "データ重視", stance: "統計や研究結果など、客観的な根拠を何より重視する。" },
-  { name: "長期視点", stance: "10年、20年先の社会への影響を重視して考える。" },
+  { name: "正確さ重視", stance: "事実関係と論理の正しさを重視する。誤りや根拠の弱い記述を見逃さない。" },
+  { name: "わかりやすさ重視", stance: "読み手の立場に立ち、構成と表現のわかりやすさを重視する。" },
+  { name: "実用性重視", stance: "読み手がすぐに使える具体性と、実行しやすさを重視する。" },
+  { name: "批判的視点", stance: "見落とされている観点、反対意見、リスクを指摘する。" },
+  { name: "簡潔さ重視", stance: "冗長な部分を削り、要点を短く伝えることを重視する。" },
+  { name: "独創性重視", stance: "ありきたりでない視点やアイデアを加えることを重視する。" },
 ];
 const DEFAULT_COUNT = 3;
 
 const MIN_PARTICIPANTS = 2;
 const MAX_PARTICIPANTS = 6;
-const STORAGE_KEY = "ai-council-settings-v2";
-const OLD_STORAGE_KEY = "ai-council-settings-v1";
-
-const RATING_CLASS = { 賛成: "agree", 条件付き賛成: "cond", 反対: "oppose", 不明: "unknown" };
+const STORAGE_KEY = "ai-council-settings-v3";
 
 // ---- 状態 ---------------------------------------------------------------
 
 const $ = (id) => document.getElementById(id);
 let providers = [];
 let controller = null;
-let debate = null; // 実行中・実行済みの討論の記録
+let session = null; // 実行中・実行済みの合議の記録
 let seatCounter = 0;
 
 // ---- 起動 ---------------------------------------------------------------
@@ -48,7 +45,7 @@ let seatCounter = 0;
 init();
 
 async function init() {
-  renderTopicExamples();
+  renderPromptExamples();
   try {
     const res = await fetch("/api/providers");
     providers = await res.json();
@@ -58,27 +55,31 @@ async function init() {
   renderProviderStatus();
   restoreOrDefault();
 
-  $("debateForm").addEventListener("submit", (e) => {
+  $("councilForm").addEventListener("submit", (e) => {
     e.preventDefault();
-    startDebate();
+    startCouncil();
   });
-  $("debateForm").addEventListener("input", saveSettings);
-  $("debateForm").addEventListener("change", saveSettings);
+  $("councilForm").addEventListener("input", saveSettings);
+  $("councilForm").addEventListener("change", saveSettings);
   $("addParticipant").addEventListener("click", addParticipant);
   $("stopBtn").addEventListener("click", () => controller?.abort());
-  $("copyBtn").addEventListener("click", copyMinutes);
-  $("downloadBtn").addEventListener("click", downloadMinutes);
+  $("sessionStopBtn").addEventListener("click", () => controller?.abort());
+  $("toggleSettings").addEventListener("click", () => setFocus(!$("layout").classList.contains("focus")));
+  $("copyBtn").addEventListener("click", () => copyText($("copyBtn"), buildMinutes(), "議事録をコピー"));
+  $("downloadBtn").addEventListener("click", () => download(buildMinutes(), "議事録"));
+  $("copyAnswerBtn").addEventListener("click", () => copyText($("copyAnswerBtn"), finalText(), "回答をコピー"));
+  $("saveAnswerBtn").addEventListener("click", () => download(finalText() + "\n", "回答"));
 }
 
-function renderTopicExamples() {
-  const box = $("topicExamples");
-  for (const text of TOPIC_EXAMPLES) {
+function renderPromptExamples() {
+  const box = $("promptExamples");
+  for (const text of PROMPT_EXAMPLES) {
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "chip";
     chip.textContent = text;
     chip.addEventListener("click", () => {
-      $("topic").value = text;
+      $("prompt").value = text;
       saveSettings();
     });
     box.append(chip);
@@ -96,6 +97,12 @@ function renderProviderStatus() {
     li.append(dot, document.createTextNode(p.label));
     list.append(li);
   }
+}
+
+// 合議中は設定欄をたたみ、議論と原稿を広く表示する
+function setFocus(on) {
+  $("layout").classList.toggle("focus", on);
+  $("toggleSettings").textContent = on ? "設定を表示" : "設定を隠す";
 }
 
 // ---- 参加者の席 -----------------------------------------------------------
@@ -201,10 +208,9 @@ function readSeats() {
 
 function readForm() {
   return {
-    topic: $("topic").value.trim(),
+    prompt: $("prompt").value.trim(),
     rounds: Number($("rounds").value),
     max_chars: Number($("maxChars").value),
-    early_stop: $("earlyStop").checked,
     participants: readSeats(),
   };
 }
@@ -219,15 +225,10 @@ function saveSettings() {
 
 function loadSaved() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    if (saved) return saved;
-    // 司会がいた以前の版の設定は、討論者だけを参加者として引き継ぐ
-    const old = JSON.parse(localStorage.getItem(OLD_STORAGE_KEY) || "null");
-    if (old && Array.isArray(old.debaters)) return { ...old, participants: old.debaters };
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
   } catch {
-    // 読めない場合は既定の設定にする
+    return null;
   }
-  return null;
 }
 
 // 保存時に使えたAIが今は使えない場合は、使えるAIに置き換える。
@@ -244,19 +245,18 @@ function restoreOrDefault() {
     : PRESET_PARTICIPANTS.slice(0, DEFAULT_COUNT).map((d, i) => ({ ...d, provider: defaultProvider(i) }));
 
   if (valid) {
-    $("topic").value = saved.topic || "";
+    $("prompt").value = saved.prompt || "";
     $("rounds").value = String(saved.rounds || 2);
     $("maxChars").value = String(saved.max_chars || 300);
-    $("earlyStop").checked = saved.early_stop !== false;
   }
   $("participantSlots").replaceChildren(...participants.map(createSeat));
   refreshSeatButtons();
 }
 
-// ---- 討論の実行 -------------------------------------------------------------
+// ---- 合議の実行 -------------------------------------------------------------
 
 function validate(cfg) {
-  if (!cfg.topic) return "議題を入力してください。";
+  if (!cfg.prompt) return "プロンプトを入力してください。";
   const names = cfg.participants.map((p) => p.name);
   if (names.some((n) => !n)) return "参加者の名前を入力してください。";
   if (new Set(names).size !== names.length) return "参加者の名前が重複しています。";
@@ -270,22 +270,23 @@ function showFormError(message) {
 }
 
 function setRunning(running) {
-  for (const el of $("debateForm").elements) {
+  for (const el of $("councilForm").elements) {
     if (el.id !== "stopBtn") el.disabled = running;
   }
   $("startBtn").hidden = running;
   $("stopBtn").hidden = !running;
   $("stopBtn").disabled = false;
+  $("sessionStopBtn").hidden = !running; // 設定欄をたたんでいても止められるように
   if (!running) {
     // 選べないAIの選択肢は無効のままにする
-    for (const opt of $("debateForm").querySelectorAll(".seat-provider option")) {
+    for (const opt of $("councilForm").querySelectorAll(".seat-provider option")) {
       opt.disabled = !providerById(opt.value)?.available;
     }
     refreshSeatButtons();
   }
 }
 
-async function startDebate() {
+async function startCouncil() {
   const cfg = readForm();
   const problem = validate(cfg);
   showFormError(problem);
@@ -296,7 +297,7 @@ async function startDebate() {
 
   let res;
   try {
-    res = await fetch("/api/debate", {
+    res = await fetch("/api/council", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cfg),
@@ -314,19 +315,17 @@ async function startDebate() {
     return;
   }
 
-  resetDebateView(cfg);
-  if (window.matchMedia("(max-width: 860px)").matches) {
-    // スマートフォンでは設定の下に討論が表示されるので、そこまで移動する
-    $("debateView").scrollIntoView({ behavior: "smooth" });
-  }
+  resetSessionView(cfg);
+  setFocus(true);
+  $("sessionView").scrollIntoView({ behavior: "smooth" });
   try {
     await readEvents(res.body, handleEvent);
-    if (!debate.ended) endDebate("error", "通信が途中で切れました。");
+    if (!session.ended) endSession("error", "通信が途中で切れました。");
   } catch (err) {
     if (err.name === "AbortError") {
-      endDebate("stopped", "討論を途中で止めました。");
+      endSession("stopped", "合議を途中で止めました。");
     } else {
-      endDebate("error", "通信が途中で切れました。");
+      endSession("error", "通信が途中で切れました。");
     }
   }
   finish();
@@ -369,27 +368,52 @@ async function readEvents(body, onEvent) {
   }
 }
 
-// ---- 討論の表示 -------------------------------------------------------------
+// ---- 合議の表示 -------------------------------------------------------------
 
-function resetDebateView(cfg) {
-  debate = { cfg, seats: {}, turns: {}, lastTurnOf: {}, proposals: {}, log: [], startedAt: new Date(), ended: false };
+function resetSessionView(cfg) {
+  session = {
+    cfg,
+    seats: {},
+    turns: {},
+    lastTurnOf: {},
+    versions: {}, // 版番号 → { no, author_id, text, diff, added, removed, approvals:Set, objections:Set }
+    latest: 0,
+    shown: 0, // 共同原稿欄に表示している版
+    drafting: null, // 初稿を書いている発言
+    final: null,
+    log: [],
+    startedAt: new Date(),
+    ended: false,
+  };
   $("emptyState").hidden = true;
-  $("debateView").hidden = false;
-  $("debateTopic").textContent = cfg.topic;
+  $("sessionView").hidden = false;
+  $("sessionPrompt").textContent = cfg.prompt;
   $("roster").replaceChildren();
   $("timeline").replaceChildren();
   $("resultBar").hidden = true;
+  $("docActions").hidden = true;
+  renderDoc();
 }
 
 function handleEvent(ev) {
   switch (ev.type) {
-    case "debate_start":
-      for (const p of ev.participants) debate.seats[p.id] = p;
+    case "session_start":
+      for (const p of ev.participants) session.seats[p.id] = p;
       renderRoster(ev.participants);
+      renderDoc();
       break;
     case "phase":
       appendPhase(ev);
       break;
+    case "lottery": {
+      const name = session.seats[ev.drafter_id]?.name;
+      appendNotice(
+        ev.retry
+          ? `初稿を書けなかったため、くじ引きで選び直しました。${name}が初稿を書きます。`
+          : `くじ引きの結果、${name}が初稿を書きます。`
+      );
+      break;
+    }
     case "turn_start":
       startTurn(ev);
       break;
@@ -399,32 +423,25 @@ function handleEvent(ev) {
     case "turn_end":
       endTurn(ev);
       break;
-    case "continue_vote":
-      addChips(ev.speaker_id, [ev.decision === "stop" ? ["終了に1票", "oppose"] : ["継続に1票", "agree"]]);
+    case "version":
+      addVersion(ev);
       break;
-    case "round_decision":
-      appendNotice(decisionText(ev));
+    case "review":
+      showReview(ev);
       break;
-    case "evaluation":
-      addChips(
-        ev.speaker_id,
-        ev.ratings.map((r) => [`案${r.proposal_no}：${r.rating}`, RATING_CLASS[r.rating] || "unknown"])
-      );
+    case "skip":
+      appendNotice(`${session.seats[ev.speaker_id]?.name}は第${ev.version}版をすでに承認しているため、番を省略しました。`);
       break;
-    case "result":
-      appendResult(ev);
+    case "consensus":
+      appendNotice(`全員が第${ev.version}版を承認しました。`);
       break;
-    case "debate_end":
-      endDebate(ev.status, ev.message);
+    case "final":
+      showFinal(ev);
+      break;
+    case "session_end":
+      endSession(ev.status, ev.message);
       break;
   }
-}
-
-function decisionText(ev) {
-  const count = `継続${ev.continue}票、終了${ev.stop}票`;
-  if (ev.decision === "continue") return `多数決（${count}）：議論を続けます。`;
-  if (ev.early_stop) return `多数決（${count}）：論点が出尽くしたと判断し、残りのラウンドを省略して結論案に進みます。`;
-  return `多数決（${count}）では終了が上回りましたが、設定に従ってラウンドを続けます。`;
 }
 
 function avatar(seat) {
@@ -448,20 +465,21 @@ function renderRoster(participants) {
 }
 
 function appendPhase(ev) {
-  const wrap = document.createElement("div");
-  wrap.className = "phase";
-  const title = document.createElement("span");
-  title.textContent = ev.title;
-  wrap.append(title);
+  const block = document.createElement("div");
+  const line = document.createElement("div");
+  line.className = "phase";
+  line.textContent = ev.title;
+  block.append(line);
   let detail = "";
   if (ev.order) {
-    detail = `発言順：${ev.order.map((id) => debate.seats[id]?.name || id).join("→")}`;
-    const sub = document.createElement("small");
+    detail = `発言順：${ev.order.map((id) => session.seats[id]?.name || id).join("→")}`;
+    const sub = document.createElement("p");
+    sub.className = "phase-order";
     sub.textContent = detail;
-    wrap.append(sub);
+    block.append(sub);
   }
-  appendToTimeline(wrap);
-  debate.log.push({ type: "phase", title: ev.title, detail });
+  appendToTimeline(block);
+  session.log.push({ type: "phase", title: ev.title, detail });
 }
 
 function appendNotice(text) {
@@ -469,11 +487,11 @@ function appendNotice(text) {
   el.className = "notice";
   el.textContent = text;
   appendToTimeline(el);
-  debate.log.push({ type: "notice", text });
+  session.log.push({ type: "notice", text });
 }
 
 function startTurn(ev) {
-  const seat = debate.seats[ev.speaker_id];
+  const seat = session.seats[ev.speaker_id];
   const el = document.createElement("article");
   el.className = `msg thinking kind-${ev.kind}`;
   el.style.setProperty("--seat-color", PROVIDER_COLORS[seat.provider] || "var(--accent)");
@@ -484,17 +502,11 @@ function startTurn(ev) {
   const name = document.createElement("span");
   name.className = "msg-name";
   name.textContent = seat.name;
-  head.append(name);
-  if (ev.proposal_no) {
-    const tag = document.createElement("span");
-    tag.className = "proposal-tag";
-    tag.textContent = `案${ev.proposal_no}`;
-    head.append(tag);
-  }
   const meta = document.createElement("span");
   meta.className = "msg-meta";
-  meta.textContent = `${ev.proposal_no ? "結論案" : ev.label}・${seat.provider_label}（${seat.model}）`;
-  head.append(meta);
+  const what = ev.version ? `${ev.label}・第${ev.version}版を確認` : ev.label;
+  meta.textContent = `${what}・${seat.provider_label}（${seat.model}）`;
+  head.append(name, meta);
 
   const body = document.createElement("div");
   body.className = "msg-body";
@@ -502,15 +514,19 @@ function startTurn(ev) {
   el.append(avatar(seat), main);
   appendToTimeline(el);
 
-  const entry = { type: "turn", seat, label: ev.label, kind: ev.kind, text: "", error: "", chips: [] };
-  debate.turns[ev.turn_id] = { el, body, main, entry, pending: false };
-  debate.lastTurnOf[ev.speaker_id] = ev.turn_id;
-  if (ev.proposal_no) debate.proposals[ev.proposal_no] = { seat, entry };
-  debate.log.push(entry);
+  const entry = { type: "turn", seat, label: ev.label, kind: ev.kind, text: "", error: "", note: "" };
+  const turn = { el, body, main, entry, pending: false, done: false };
+  session.turns[ev.turn_id] = turn;
+  session.lastTurnOf[ev.speaker_id] = ev.turn_id;
+  if (ev.kind === "draft") {
+    session.drafting = turn;
+    renderDoc();
+  }
+  session.log.push(entry);
 }
 
 function appendDelta(turnId, text) {
-  const turn = debate.turns[turnId];
+  const turn = session.turns[turnId];
   if (!turn) return;
   turn.entry.text += text;
   turn.el.classList.remove("thinking");
@@ -520,7 +536,10 @@ function appendDelta(turnId, text) {
     turn.pending = true;
     requestAnimationFrame(() => {
       turn.pending = false;
+      // 発言が終わったあとは、意見や判断の表示を上書きしないよう描画しない
+      if (turn.done) return;
       renderBody(turn);
+      if (session.drafting === turn) renderDoc();
     });
   }
 }
@@ -528,17 +547,20 @@ function appendDelta(turnId, text) {
 function renderBody(turn) {
   const stick = nearBottom();
   let html = renderMarkdown(turn.entry.text);
-  if (turn.el.classList.contains("streaming")) {
-    // 入力中を示すカーソルを、最後の段落の末尾に置く
-    html = html.replace(/<\/(p|li|h4)>(?![\s\S]*<\/(?:p|li|h4)>)/, '<span class="caret"></span></$1>');
-  }
+  if (turn.el.classList.contains("streaming")) html = withCaret(html);
   turn.body.innerHTML = html;
   if (stick) scrollToBottom();
 }
 
+// 入力中を示すカーソルを、最後の段落の末尾に置く
+function withCaret(html) {
+  return html.replace(/<\/(p|li|h4)>(?![\s\S]*<\/(?:p|li|h4)>)/, '<span class="caret"></span></$1>');
+}
+
 function endTurn(ev) {
-  const turn = debate.turns[ev.turn_id];
+  const turn = session.turns[ev.turn_id];
   if (!turn) return;
+  turn.done = true;
   turn.el.classList.remove("thinking", "streaming");
   if (ev.ok) {
     turn.entry.text = ev.text;
@@ -548,126 +570,235 @@ function endTurn(ev) {
     turn.el.classList.add("failed");
     turn.body.textContent = `発言できませんでした：${ev.error}`;
   }
+  if (session.drafting === turn) {
+    session.drafting = null;
+    renderDoc();
+  }
 }
 
-function addChips(speakerId, chips) {
-  const turn = debate.turns[debate.lastTurnOf[speakerId]];
+// 新しい版ができたとき
+function addVersion(ev) {
+  const v = { ...ev, no: ev.version, approvals: new Set(ev.approvals), objections: new Set() };
+  session.versions[ev.version] = v;
+  session.latest = ev.version;
+  session.shown = ev.version;
+  renderDoc();
+
+  if (ev.version === 1) {
+    // 初稿の発言欄は、全文を折りたたんで表示する（原稿は共同原稿欄で読める）
+    const turn = session.turns[session.lastTurnOf[ev.author_id]];
+    if (turn) {
+      turn.body.replaceChildren(textP("初稿（第1版）を書きました。共同原稿欄に表示しています。"), details("初稿の全文を見る", markdownBox(ev.text)));
+      turn.entry.note = "第1版を作成";
+    }
+  }
+}
+
+function showReview(ev) {
+  const turn = session.turns[session.lastTurnOf[ev.speaker_id]];
+  const reviewed = session.versions[ev.reviewed_version];
+  const current = session.versions[ev.current_version];
+  if (ev.decision === "approve") {
+    reviewed.approvals.add(ev.speaker_id);
+    reviewed.objections.delete(ev.speaker_id);
+  } else if (ev.decision === "object") {
+    reviewed.approvals.delete(ev.speaker_id);
+    reviewed.objections.add(ev.speaker_id);
+  }
+  current.approvals = new Set(ev.approvals);
+  renderDoc();
   if (!turn) return;
+
+  // 発言欄は、意見だけを表示し直す（修正版の全文は共同原稿欄と差分で見られる）
+  const parts = [markdownBox(ev.opinion)];
+  const chip = document.createElement("span");
+  if (ev.decision === "approve") {
+    chip.className = "vote v-agree";
+    chip.textContent = `第${ev.reviewed_version}版を承認`;
+  } else if (ev.decision === "revise") {
+    chip.className = "vote v-accent";
+    chip.textContent = `修正して第${ev.current_version}版を作成（＋${current.added}行／−${current.removed}行）`;
+  } else {
+    chip.className = "vote v-cond";
+    chip.textContent = `第${ev.reviewed_version}版に修正を求める`;
+  }
   const row = document.createElement("div");
   row.className = "chip-row";
-  for (const [text, cls] of chips) {
-    const chip = document.createElement("span");
-    chip.className = `vote v-${cls}`;
-    chip.textContent = text;
-    row.append(chip);
-  }
-  turn.main.append(row);
-  turn.entry.chips.push(...chips.map(([text]) => text));
+  row.append(chip);
+  parts.push(row);
+  if (ev.decision === "revise") parts.push(details("変更点を見る", diffBox(current.diff)));
+  turn.body.replaceChildren(...parts);
+  turn.entry.text = ev.opinion;
+  turn.entry.note = chip.textContent;
 }
 
-function appendResult(ev) {
-  const wrap = document.createElement("section");
-  wrap.className = "result";
-
-  for (const p of ev.proposals) {
-    const author = debate.seats[p.author_id];
-    const row = document.createElement("div");
-    row.className = "score-row" + (p.no === ev.adopted ? " adopted" : "");
-    const head = document.createElement("div");
-    head.className = "score-head";
-    const tag = document.createElement("span");
-    tag.className = "proposal-tag";
-    tag.textContent = `案${p.no}`;
-    const who = document.createElement("span");
-    who.textContent = `${author?.name || "?"}の案`;
-    head.append(tag, who);
-    if (p.no === ev.adopted) {
-      const badge = document.createElement("span");
-      badge.className = "adopted-badge";
-      badge.textContent = "採択";
-      head.append(badge);
-    }
-    const support = document.createElement("span");
-    support.className = "support";
-    support.textContent = `支持率 ${p.support}%`;
-    head.append(support);
-    row.append(head, tallyBar(p.counts));
-    wrap.append(row);
-  }
-
-  const note = document.createElement("p");
-  note.className = "muted";
-  note.textContent =
-    "支持率は、賛成を2点、条件付き賛成を1点、反対と不明を0点として、満点に対する割合です。自分の案は評価していません。";
-  wrap.append(note);
-  appendToTimeline(wrap);
-
-  if (ev.tie_break) appendNotice("支持率が同じ案があったため、くじ引きで採択する案を決めました。");
-
-  let conclusion = null;
-  if (ev.adopted == null) {
-    appendNotice("どの案も支持を得られなかったため、結論は採択されませんでした。");
+function showFinal(ev) {
+  session.final = ev;
+  session.shown = ev.version;
+  const total = Object.keys(session.seats).length;
+  if (ev.unanimous) {
+    appendNotice(`完成しました。全員が承認した第${ev.version}版が回答です。`);
+  } else if (ev.version === ev.latest_version) {
+    appendNotice(`最大ラウンドに達しました。全員の承認には至りませんでしたが、最も多くの承認（${ev.approvals.length}／${total}）を得た第${ev.version}版を回答とします。`);
   } else {
-    const adopted = ev.proposals.find((p) => p.no === ev.adopted);
-    const author = debate.seats[adopted.author_id];
-    const card = document.createElement("article");
-    card.className = "conclusion-card";
-    const h = document.createElement("h3");
-    h.textContent = "採択された結論";
-    const meta = document.createElement("p");
-    meta.className = "muted";
-    meta.textContent = `案${adopted.no}（${author?.name || "?"}の案）・支持率 ${adopted.support}%`;
-    const body = document.createElement("div");
-    body.className = "msg-body";
-    body.innerHTML = renderMarkdown(ev.text);
-    card.append(h, meta, body);
-    appendToTimeline(card);
-    conclusion = { no: adopted.no, author: author?.name || "?", support: adopted.support, text: ev.text };
+    appendNotice(
+      `最大ラウンドに達しました。全員の承認には至らなかったため、最新の第${ev.latest_version}版ではなく、最も多くの承認（${ev.approvals.length}／${total}）を得た第${ev.version}版を回答とします。`
+    );
   }
-  debate.log.push({ type: "result", proposals: ev.proposals, tieBreak: ev.tie_break, conclusion });
+  $("docActions").hidden = false;
+  renderDoc();
 }
 
-function tallyBar(counts) {
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const box = document.createElement("div");
-  const bar = document.createElement("div");
-  bar.className = "tally-bar";
-  const legend = document.createElement("div");
-  legend.className = "tally-legend";
-  for (const [label, n] of Object.entries(counts)) {
-    if (!n) continue;
-    const seg = document.createElement("span");
-    seg.className = `seg-${RATING_CLASS[label] || "unknown"}`;
-    seg.style.width = `${(n / total) * 100}%`;
-    seg.title = `${label}：${n}`;
-    bar.append(seg);
-    const item = document.createElement("span");
-    item.append(document.createTextNode(`${label} `));
-    const b = document.createElement("b");
-    b.textContent = n;
-    item.append(b);
-    legend.append(item);
+// ---- 共同原稿欄 -------------------------------------------------------------
+
+function renderDoc() {
+  if (!session) return;
+  const total = Object.keys(session.seats).length;
+  const v = session.versions[session.shown];
+  const final = session.final;
+
+  // 見出し
+  const versionLabel = $("docVersion");
+  const status = $("docStatus");
+  status.className = "doc-status";
+  if (session.drafting && !v) {
+    versionLabel.textContent = "第1版";
+    status.textContent = `${session.drafting.entry.seat.name}が執筆中…`;
+  } else if (!v) {
+    versionLabel.textContent = "";
+    status.textContent = "初稿を待っています";
+  } else {
+    versionLabel.textContent = `第${v.no}版`;
+    if (final && final.version === v.no) {
+      status.textContent = final.unanimous ? "完成（全員が承認）" : `採用（承認 ${v.approvals.size}／${total}）`;
+      status.classList.add("done");
+    } else {
+      const latest = v.no === session.latest ? "" : `（最新は第${session.latest}版）`;
+      status.textContent = `承認 ${v.approvals.size}／${total}${latest}`;
+    }
   }
-  box.append(bar, legend);
+
+  // 承認状況
+  const approvals = $("docApprovals");
+  approvals.replaceChildren();
+  if (v) {
+    for (const seat of Object.values(session.seats)) {
+      const li = document.createElement("li");
+      let state = "未確認";
+      if (v.approvals.has(seat.id)) state = v.author_id === seat.id ? "作成・承認" : "承認";
+      else if (v.objections.has(seat.id)) state = "修正を求める";
+      li.className = state.includes("承認") ? "ok" : state === "修正を求める" ? "ng" : "";
+      li.append(avatar(seat), document.createTextNode(`${seat.name}：${state}`));
+      approvals.append(li);
+    }
+  }
+
+  // 版の切り替え
+  const versions = $("docVersions");
+  versions.replaceChildren();
+  const nos = Object.keys(session.versions).map(Number).sort((a, b) => a - b);
+  if (nos.length > 1) {
+    for (const no of nos) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "version-btn" + (no === session.shown ? " active" : "");
+      b.textContent = final && final.version === no ? `第${no}版（回答）` : `第${no}版`;
+      b.title = `${session.seats[session.versions[no].author_id]?.name}が作成`;
+      b.addEventListener("click", () => {
+        session.shown = no;
+        renderDoc();
+      });
+      versions.append(b);
+    }
+  }
+
+  // 本文
+  const body = $("docBody");
+  if (v) {
+    body.innerHTML = renderMarkdown(v.text);
+  } else if (session.drafting) {
+    body.innerHTML = withCaret(renderMarkdown(session.drafting.entry.text)) || '<p class="muted">考え中…</p>';
+  } else {
+    body.innerHTML = '<p class="muted">方針の議論のあと、くじ引きで選ばれたAIが初稿を書きます。</p>';
+  }
+}
+
+function finalText() {
+  if (!session?.final) return "";
+  return session.final.text;
+}
+
+// ---- 部品 -------------------------------------------------------------------
+
+function textP(text) {
+  const p = document.createElement("p");
+  p.textContent = text;
+  return p;
+}
+
+function markdownBox(text) {
+  const div = document.createElement("div");
+  div.innerHTML = renderMarkdown(text);
+  return div;
+}
+
+function details(summaryText, content) {
+  const d = document.createElement("details");
+  const s = document.createElement("summary");
+  s.textContent = summaryText;
+  d.append(s, content);
+  return d;
+}
+
+// 差分表示。変更のない行が続くところは前後2行だけ残して省略する
+function diffBox(diff) {
+  const box = document.createElement("div");
+  box.className = "diff";
+  const keep = new Set();
+  diff.forEach((d, i) => {
+    if (d.op !== "same") for (let k = i - 2; k <= i + 2; k++) keep.add(k);
+  });
+  let skipped = 0;
+  const flush = () => {
+    if (!skipped) return;
+    const gap = document.createElement("div");
+    gap.className = "diff-gap";
+    gap.textContent = `（変更のない${skipped}行を省略）`;
+    box.append(gap);
+    skipped = 0;
+  };
+  diff.forEach((d, i) => {
+    if (d.op === "same" && !keep.has(i)) {
+      skipped++;
+      return;
+    }
+    flush();
+    const line = document.createElement("div");
+    line.className = `diff-line diff-${d.op}`;
+    line.textContent = (d.op === "add" ? "＋ " : d.op === "del" ? "− " : "　 ") + d.text;
+    box.append(line);
+  });
+  flush();
   return box;
 }
 
-function endDebate(status, message) {
-  if (!debate || debate.ended) return;
-  debate.ended = true;
-  for (const turn of Object.values(debate.turns)) {
+function endSession(status, message) {
+  if (!session || session.ended) return;
+  session.ended = true;
+  for (const turn of Object.values(session.turns)) {
     if (turn.el.classList.contains("thinking") || turn.el.classList.contains("streaming")) {
       turn.el.classList.remove("thinking", "streaming");
       if (!turn.entry.text) turn.body.textContent = "（中断されました）";
     }
   }
-  const text = status === "completed" ? "討論が終わりました。" : message || "討論が中断されました。";
+  session.drafting = null;
+  renderDoc();
+  const text = status === "completed" ? "合議が終わりました。" : message || "合議が中断されました。";
   const p = $("resultMessage");
   p.textContent = text;
   p.className = status === "error" ? "error" : "";
   $("resultBar").hidden = false;
-  debate.result = text;
-  if (nearBottom()) scrollToBottom();
+  session.result = text;
 }
 
 function appendToTimeline(el) {
@@ -684,69 +815,69 @@ function scrollToBottom() {
   window.scrollTo({ top: document.documentElement.scrollHeight });
 }
 
-// ---- 議事録 ---------------------------------------------------------------
+// ---- 議事録と保存 -----------------------------------------------------------
 
 function buildMinutes() {
-  if (!debate) return "";
+  if (!session) return "";
   const lines = [
     "# AI合議室 議事録",
     "",
-    `- 議題：${debate.cfg.topic}`,
-    `- 日時：${debate.startedAt.toLocaleString("ja-JP")}`,
+    `- 日時：${session.startedAt.toLocaleString("ja-JP")}`,
     "- 参加者（全員が対等）：",
   ];
-  for (const seat of Object.values(debate.seats)) {
+  for (const seat of Object.values(session.seats)) {
     const stance = seat.stance ? `、${seat.stance}` : "";
     lines.push(`  - ${seat.name}（${seat.provider_label}：${seat.model}${stance}）`);
   }
-  for (const item of debate.log) {
+  lines.push("", "## プロンプト", "", session.cfg.prompt);
+  for (const item of session.log) {
     if (item.type === "phase") {
       lines.push("", `## ${item.title}`);
       if (item.detail) lines.push("", item.detail);
     }
     if (item.type === "notice") lines.push("", `> ${item.text}`);
     if (item.type === "turn") {
-      const tag = item.kind === "proposal" ? `（${item.label}）` : "";
-      lines.push("", `### ${item.seat.name}${tag}`, "");
-      lines.push(item.error ? `（発言できませんでした：${item.error}）` : item.text || "（中断されました）");
-      if (item.chips.length) lines.push("", `→ ${item.chips.join("、")}`);
-    }
-    if (item.type === "result") {
-      lines.push("", "| 案 | 作成者 | 支持率 | 賛成 | 条件付き賛成 | 反対 | 不明 |", "|---|---|---|---|---|---|---|");
-      for (const p of item.proposals) {
-        const c = p.counts;
-        const name = debate.seats[p.author_id]?.name || "?";
-        lines.push(`| 案${p.no} | ${name} | ${p.support}% | ${c["賛成"]} | ${c["条件付き賛成"]} | ${c["反対"]} | ${c["不明"]} |`);
-      }
-      if (item.conclusion) {
-        const c = item.conclusion;
-        lines.push("", `## 採択された結論（案${c.no}・${c.author}の案・支持率${c.support}%）`, "", c.text);
-      }
+      lines.push("", `### ${item.seat.name}`, "");
+      if (item.error) lines.push(`（発言できませんでした：${item.error}）`);
+      else if (item.kind === "draft") lines.push("（初稿の全文は、下の「版の履歴」にあります）");
+      else lines.push(item.text || "（中断されました）");
+      if (item.note && item.kind !== "draft") lines.push("", `→ ${item.note}`);
     }
   }
-  if (debate.result) lines.push("", "---", "", debate.result);
+  const nos = Object.keys(session.versions).map(Number).sort((a, b) => a - b);
+  if (nos.length) {
+    lines.push("", "## 版の履歴");
+    for (const no of nos) {
+      const v = session.versions[no];
+      const author = session.seats[v.author_id]?.name;
+      lines.push("", `### 第${no}版（${author}が作成、承認：${[...v.approvals].map((id) => session.seats[id]?.name).join("、") || "なし"}）`, "", v.text);
+    }
+  }
+  if (session.final) {
+    lines.push("", `## 回答（第${session.final.version}版${session.final.unanimous ? "、全員が承認" : ""}）`, "", session.final.text);
+  }
+  if (session.result) lines.push("", "---", "", session.result);
   return lines.join("\n") + "\n";
 }
 
-async function copyMinutes() {
-  const btn = $("copyBtn");
+async function copyText(btn, text, label) {
   try {
-    await navigator.clipboard.writeText(buildMinutes());
+    await navigator.clipboard.writeText(text);
     btn.textContent = "コピーしました";
   } catch {
     btn.textContent = "コピーできませんでした";
   }
-  setTimeout(() => (btn.textContent = "議事録をコピー"), 2000);
+  setTimeout(() => (btn.textContent = label), 2000);
 }
 
-function downloadMinutes() {
-  const blob = new Blob([buildMinutes()], { type: "text/markdown;charset=utf-8" });
+function download(text, prefix) {
+  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const d = debate.startedAt;
+  const d = session.startedAt;
   const pad = (n) => String(n).padStart(2, "0");
   a.href = url;
-  a.download = `議事録_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.md`;
+  a.download = `${prefix}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.md`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -767,6 +898,7 @@ function renderMarkdown(src) {
   let html = "";
   let para = [];
   let list = null;
+  let code = null; // コードブロックの中身
   const flushPara = () => {
     if (para.length) html += `<p>${para.map(inline).join("<br>")}</p>`;
     para = [];
@@ -779,7 +911,18 @@ function renderMarkdown(src) {
   for (const raw of src.replace(/\r\n/g, "\n").split("\n")) {
     const line = raw.trimEnd();
     let m;
-    if (!line.trim()) {
+    if (code !== null) {
+      if (/^\s*```/.test(line)) {
+        html += `<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`;
+        code = null;
+      } else {
+        code.push(raw);
+      }
+    } else if (/^\s*```/.test(line)) {
+      flushPara();
+      closeList();
+      code = [];
+    } else if (!line.trim()) {
       flushPara();
       closeList();
     } else if ((m = line.match(/^#{1,6}\s+(.*)$/))) {
@@ -807,6 +950,7 @@ function renderMarkdown(src) {
       para.push(line);
     }
   }
+  if (code !== null) html += `<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`;
   flushPara();
   closeList();
   return html;

@@ -8,7 +8,7 @@ import pytest
 from ai_council.config import load_settings
 from ai_council.providers import Provider, ProviderError, ProviderStatus, TurnKind, TurnRequest
 from ai_council.providers.mock_provider import MockProvider
-from ai_council.schemas import DebateConfig
+from ai_council.schemas import CouncilConfig
 
 
 class ScriptedProvider(Provider):
@@ -53,11 +53,11 @@ def mock_provider() -> MockProvider:
     return provider
 
 
-def make_config(provider: str = "mock", names=("推進派", "慎重派", "現実派"), **overrides) -> DebateConfig:
+def make_config(provider: str = "mock", names=("正確さ重視", "わかりやすさ重視", "実用性重視"), **overrides) -> CouncilConfig:
     data = {
-        "topic": "週休3日制を導入すべきか",
+        "prompt": "新入社員向けに、生成AIを安全に使うためのガイドラインを作ってください",
         "rounds": 2,
         "participants": [{"name": n, "provider": provider, "stance": f"{n}の立場"} for n in names],
     }
     data.update(overrides)
-    return DebateConfig.model_validate(data)
+    return CouncilConfig.model_validate(data)

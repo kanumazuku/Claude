@@ -117,6 +117,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .settings { padding: 20px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
 .stage { padding: 24px; min-height: 60vh; }
+.layout.focus { grid-template-columns: minmax(0, 1fr); }
+.layout.focus .settings { display: none; }
 
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; padding: 16px 16px 40px; }
@@ -144,9 +146,6 @@ input[type="text"]:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
-
-.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-.check input { margin-top: 5px; accent-color: var(--accent); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
@@ -188,6 +187,8 @@ input[type="text"]:focus, select:focus, textarea:focus {
 .icon-btn:hover { color: var(--danger); border-color: var(--danger); }
 .icon-btn:disabled { visibility: hidden; }
 
+.hint { margin: -4px 0 8px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
 .form-error { color: var(--danger); font-size: 13px; margin: 12px 0 0; }
 
 .actions { display: flex; gap: 8px; margin-top: 18px; }
@@ -212,10 +213,74 @@ input[type="text"]:focus, select:focus, textarea:focus {
 .flow li { margin-bottom: 6px; }
 .muted { color: var(--muted); font-size: 13px; }
 
-/* 討論ビュー */
-.debate-head { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 8px; }
+/* 合議ビュー */
+.session-head { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 8px; }
+.session-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.toolbar-actions { display: flex; align-items: center; gap: 14px; }
+.btn.small { padding: 3px 12px; font-size: 13px; }
 .eyebrow { margin: 0; font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: 0.08em; }
-.debate-head h2 { margin: 2px 0 12px; font-size: 20px; line-height: 1.5; }
+.prompt-text {
+  margin: 4px 0 12px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 9.6em;
+  overflow-y: auto;
+}
+
+/* 議論（左）と共同原稿（右） */
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.layout:not(.focus) .workspace { grid-template-columns: minmax(0, 1fr); }
+.doc {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  margin-top: 14px;
+  padding: 16px 18px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.layout:not(.focus) .doc { position: static; max-height: none; }
+.doc-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.doc-head h3 { margin: 0; font-size: 16px; }
+.doc-version { font-weight: 700; color: var(--accent); }
+.doc-status { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.doc-status.done { color: var(--ok); font-weight: 700; }
+.approvals { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.approvals li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.approvals li.ok { color: var(--ok); border-color: currentColor; }
+.approvals li.ng { color: var(--warn); border-color: currentColor; }
+.approvals .avatar { width: 22px; height: 22px; font-size: 11px; }
+.versions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.version-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.version-btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.doc .doc-body { margin-top: 14px; padding: 0; border: none; background: transparent; }
+.doc-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+@media (max-width: 1000px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .doc { position: static; max-height: none; }
+}
 .roster { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .roster li {
   display: flex;
@@ -253,20 +318,12 @@ input[type="text"]:focus, select:focus, textarea:focus {
   letter-spacing: 0.06em;
 }
 .phase::before, .phase::after { content: ""; flex: 1; height: 1px; background: var(--border); }
-.phase small { font-weight: 400; letter-spacing: 0; }
+.phase-order { margin: -6px 0 8px; text-align: center; font-size: 12px; color: var(--muted); }
 
 .msg { display: grid; grid-template-columns: 36px 1fr; gap: 12px; margin: 14px 0; }
 .msg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .msg-name { font-weight: 700; }
 .msg-meta { font-size: 12px; color: var(--muted); }
-.proposal-tag {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 0 7px;
-  border-radius: 4px;
-  background: var(--accent);
-  color: var(--accent-text);
-}
 .msg-body {
   margin-top: 4px;
   padding: 12px 14px;
@@ -309,6 +366,7 @@ input[type="text"]:focus, select:focus, textarea:focus {
   border: 1px solid currentColor;
 }
 .vote.v-agree { color: var(--ok); }
+.vote.v-accent { color: var(--accent); }
 .vote.v-cond { color: var(--warn); }
 .vote.v-oppose { color: var(--danger); }
 .vote.v-unknown { color: var(--muted); }
@@ -322,32 +380,31 @@ input[type="text"]:focus, select:focus, textarea:focus {
   color: var(--muted);
 }
 
-.result { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 12px 48px; }
-.score-row { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
-.score-row.adopted { border: 2px solid var(--accent); }
-.score-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 6px; font-size: 14px; }
-.adopted-badge { font-size: 12px; font-weight: 700; color: var(--accent); }
-.support { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
-.result .muted { margin: 0; font-size: 12px; }
-
-.conclusion-card {
-  margin: 16px 0 8px;
-  padding: 16px 18px;
-  border: 2px solid var(--accent);
-  border-radius: 12px;
-  background: var(--surface);
+details { margin-top: 8px; font-size: 14px; }
+summary { cursor: pointer; color: var(--accent); font-size: 13px; font-weight: 700; }
+details[open] summary { margin-bottom: 6px; }
+.diff {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.6;
 }
-.conclusion-card h3 { margin: 0; font-size: 16px; }
-.conclusion-card > .muted { margin: 2px 0 10px; }
-.conclusion-card .msg-body { margin: 0; padding: 0; border: none; background: transparent; }
-.tally-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
-.tally-bar span { display: block; height: 100%; }
-.tally-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 12px; color: var(--muted); }
-.tally-legend b { color: var(--text); }
-.seg-agree { background: var(--ok); }
-.seg-cond { background: var(--warn); }
-.seg-oppose { background: var(--danger); }
-.seg-unknown { background: var(--muted); }
+.diff-line { padding: 1px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.diff-del { background: color-mix(in srgb, var(--danger) 12%, transparent); text-decoration: line-through; color: var(--muted); }
+.diff-same { color: var(--muted); }
+.diff-gap { padding: 2px 10px; font-size: 12px; color: var(--muted); background: var(--surface-2); }
+
+.msg-body pre {
+  margin: 0.4em 0 0.8em;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  overflow-x: auto;
+  font-size: 13px;
+}
+.msg-body code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 0.92em; }
 
 .result-bar {
   display: flex;
@@ -366,6 +423,6 @@ input[type="text"]:focus, select:focus, textarea:focus {
 @media (max-width: 520px) {
   .msg { grid-template-columns: 28px 1fr; gap: 8px; }
   .msg .avatar { width: 28px; height: 28px; font-size: 13px; }
-  .notice, .result { margin-left: 36px; }
+  .notice { margin-left: 36px; }
   .seat-row { grid-template-columns: 1fr 1fr 32px; }
 }

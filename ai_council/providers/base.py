@@ -1,7 +1,7 @@
 """AIプロバイダー共通のインターフェース。
 
 各社のAIは、このProviderを継承したクラスとして実装する。
-討論エンジンはProvider.stream()だけを呼ぶので、新しいAIを追加するときも
+合議エンジンはProvider.stream()だけを呼ぶので、新しいAIを追加するときも
 このファイルの形に合わせるだけでよい。
 """
 
@@ -16,9 +16,9 @@ from enum import Enum
 class TurnKind(str, Enum):
     """発言の種類。どの種類の発言も、参加者全員が同じ条件で行う。"""
 
-    ARGUMENT = "argument"  # ラウンドでの主張・応答
-    PROPOSAL = "proposal"  # 結論案（全員が同時に、互いの案を見ずに作る）
-    EVALUATION = "evaluation"  # 自分以外の結論案への匿名評価
+    PLANNING = "planning"  # 回答の方針についての議論
+    DRAFT = "draft"  # 初稿の執筆（担当はくじ引き）
+    REVISION = "revision"  # 原稿への意見と、承認または修正
 
 
 @dataclass(frozen=True)
@@ -33,12 +33,12 @@ class TurnRequest:
     kind: TurnKind
     speaker_name: str
     stance: str
-    topic: str
+    user_prompt: str
     round: int = 0
     total_rounds: int = 0
     others: list[str] = field(default_factory=list)
-    asks_continue_vote: bool = False  # 発言の最後に【継続】【終了】を求めているか
-    proposal_numbers: list[int] = field(default_factory=list)  # 評価する案の番号
+    current_draft: str = ""
+    version: int = 0
 
 
 @dataclass(frozen=True)

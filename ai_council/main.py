@@ -1,4 +1,4 @@
-"""Webサーバー。画面（static/）の配信と、討論のリアルタイム配信（SSE）を担当する。"""
+"""Webサーバー。画面（static/）の配信と、合議のリアルタイム配信（SSE）を担当する。"""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import load_settings
-from .debate import DebateRunner, Seat
+from .council import CouncilRunner, Seat
 from .providers import Provider, ProviderStatus, build_registry
-from .schemas import DebateConfig, ParticipantConfig
+from .schemas import CouncilConfig, ParticipantConfig
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -49,8 +49,8 @@ def create_app(registry: dict[str, Provider] | None = None) -> FastAPI:
             for pid, st in found.items()
         ]
 
-    @app.post("/api/debate")
-    async def start_debate(cfg: DebateConfig) -> StreamingResponse:
+    @app.post("/api/council")
+    async def start_council(cfg: CouncilConfig) -> StreamingResponse:
         found = await statuses()
 
         def seat(seat_id: str, p: ParticipantConfig) -> Seat:
@@ -63,7 +63,7 @@ def create_app(registry: dict[str, Provider] | None = None) -> FastAPI:
             return Seat(seat_id, p, provider, p.model or st.default_model)
 
         seats = [seat(f"p{i}", p) for i, p in enumerate(cfg.participants, start=1)]
-        runner = DebateRunner(cfg, seats)
+        runner = CouncilRunner(cfg, seats)
 
         return StreamingResponse(
             _sse(runner.run()),

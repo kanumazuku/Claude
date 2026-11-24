@@ -12,25 +12,25 @@
       <span class="brand-mark" aria-hidden="true">合</span>
       <div>
         <h1>AI合議室</h1>
-        <p>さまざまなAIが対等な立場で討論し、合議で結論を出します</p>
+        <p>さまざまなAIが対等な立場で議論し、1つの回答を共同で作り上げます</p>
       </div>
     </div>
     <ul class="provider-status" id="providerStatus" aria-label="AIの接続状況"></ul>
   </header>
 
-  <main class="layout">
+  <main class="layout" id="layout">
     <!-- 設定 -->
-    <section class="panel settings" id="settings" aria-label="討論の設定">
-      <form id="debateForm" novalidate>
+    <section class="panel settings" id="settings" aria-label="合議の設定">
+      <form id="councilForm" novalidate>
         <div class="field">
-          <label for="topic">議題</label>
-          <textarea id="topic" rows="3" maxlength="500" placeholder="例：日本の企業は週休3日制を導入すべきか"></textarea>
-          <div class="chips" id="topicExamples"></div>
+          <label for="prompt">プロンプト</label>
+          <textarea id="prompt" rows="5" maxlength="4000" placeholder="AIたちに答えてほしいこと、作ってほしいものを書いてください"></textarea>
+          <div class="chips" id="promptExamples"></div>
         </div>
 
         <div class="row">
           <div class="field">
-            <label for="rounds">ラウンド数</label>
+            <label for="rounds">修正ラウンド（最大）</label>
             <select id="rounds">
               <option value="1">1</option>
               <option value="2" selected>2</option>
@@ -40,7 +40,7 @@
             </select>
           </div>
           <div class="field">
-            <label for="maxChars">発言の長さ</label>
+            <label for="maxChars">議論での発言の長さ</label>
             <select id="maxChars">
               <option value="200">短め</option>
               <option value="300" selected>標準</option>
@@ -48,10 +48,7 @@
             </select>
           </div>
         </div>
-        <label class="check">
-          <input type="checkbox" id="earlyStop" checked>
-          <span>参加者の過半数が「論点は出尽くした」と判断したら、残りのラウンドを省略する</span>
-        </label>
+        <p class="hint">全員が同じ版を承認した時点で完成します。最大ラウンドまでに承認がそろわなければ、最も多くの承認を得た版を採用します。</p>
 
         <div class="section-head">
           <h2 class="section-title">参加者 <span class="muted">（全員が対等です）</span></h2>
@@ -62,34 +59,57 @@
         <p class="form-error" id="formError" role="alert" hidden></p>
 
         <div class="actions">
-          <button type="submit" class="btn primary" id="startBtn">討論を始める</button>
+          <button type="submit" class="btn primary" id="startBtn">回答を作る</button>
           <button type="button" class="btn danger" id="stopBtn" hidden>止める</button>
         </div>
       </form>
     </section>
 
-    <!-- 討論 -->
-    <section class="panel stage" aria-label="討論の様子">
+    <!-- 合議 -->
+    <section class="panel stage" aria-label="合議の様子">
       <div class="empty" id="emptyState">
-        <h2>討論の流れ</h2>
+        <h2>回答ができるまで</h2>
         <ol class="flow">
-          <li><strong>ラウンド</strong>：参加者が順に主張し、互いの発言に応答します。発言順は毎ラウンド入れ替わります。</li>
-          <li><strong>継続の判断</strong>：全員が発言の最後に「続けるか、終えるか」を示し、多数決で決めます。</li>
-          <li><strong>結論案</strong>：全員が同時に、互いの案を見ずに結論案を作ります。</li>
-          <li><strong>相互評価</strong>：作成者を伏せた状態で、自分以外の案を賛成・条件付き賛成・反対で評価します。</li>
-          <li><strong>採択</strong>：最も支持を集めた案が結論になります。同点の場合はくじ引きで決めます。</li>
+          <li><strong>方針の議論</strong>：全員が、プロンプトの解釈、回答に含めるべき内容、構成案を出し合います。</li>
+          <li><strong>初稿</strong>：くじ引きで選ばれたAIが、議論を踏まえて初稿を書きます。</li>
+          <li><strong>修正ラウンド</strong>：全員が順番に原稿を読み、意見を述べたうえで「承認」するか「修正版」を出します。発言順は毎ラウンド入れ替わります。</li>
+          <li><strong>完成</strong>：全員が同じ版を承認したら、その版が回答になります。</li>
         </ol>
-        <p class="muted">司会や議長はいません。すべてのAIが同じ権利で議論に参加します。</p>
-        <p class="muted">APIキーがなくても、「デモ」AIで流れを試せます。</p>
+        <p class="muted">リーダーや編集長はいません。すべてのAIが同じ権利で回答づくりに参加します。APIキーがなくても、「デモ」AIで流れを試せます。</p>
       </div>
 
-      <div id="debateView" hidden>
-        <div class="debate-head">
-          <p class="eyebrow">議題</p>
-          <h2 id="debateTopic"></h2>
+      <div id="sessionView" hidden>
+        <div class="session-head">
+          <div class="session-toolbar">
+            <p class="eyebrow">プロンプト</p>
+            <div class="toolbar-actions">
+              <button type="button" class="link-btn" id="toggleSettings">設定を表示</button>
+              <button type="button" class="btn danger small" id="sessionStopBtn" hidden>止める</button>
+            </div>
+          </div>
+          <p class="prompt-text" id="sessionPrompt"></p>
           <ul class="roster" id="roster"></ul>
         </div>
-        <div class="timeline" id="timeline" aria-live="polite"></div>
+
+        <div class="workspace">
+          <div class="timeline" id="timeline" aria-live="polite"></div>
+
+          <aside class="doc" id="doc" aria-label="共同原稿">
+            <div class="doc-head">
+              <h3>共同原稿</h3>
+              <span class="doc-version" id="docVersion"></span>
+              <span class="doc-status" id="docStatus"></span>
+            </div>
+            <ul class="approvals" id="docApprovals" aria-label="この版の承認状況"></ul>
+            <div class="versions" id="docVersions" aria-label="版の切り替え"></div>
+            <div class="doc-body msg-body" id="docBody"></div>
+            <div class="doc-actions" id="docActions" hidden>
+              <button type="button" class="btn primary" id="copyAnswerBtn">回答をコピー</button>
+              <button type="button" class="btn" id="saveAnswerBtn">回答を保存</button>
+            </div>
+          </aside>
+        </div>
+
         <div class="result-bar" id="resultBar" hidden>
           <p id="resultMessage"></p>
           <div class="result-actions">
@@ -109,7 +129,7 @@
         <button type="button" class="icon-btn seat-remove" aria-label="この参加者を外す" title="外す">×</button>
       </div>
       <input class="seat-model" type="text" maxlength="100" aria-label="モデル" placeholder="モデル">
-      <textarea class="seat-stance" rows="2" maxlength="300" aria-label="立場・個性" placeholder="立場・個性（例：慎重派。リスクを重視する）"></textarea>
+      <textarea class="seat-stance" rows="2" maxlength="300" aria-label="観点・個性" placeholder="観点・個性（例：正確さを重視する）"></textarea>
     </div>
   </template>
 

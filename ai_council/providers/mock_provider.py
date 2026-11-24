@@ -1,4 +1,8 @@
-"""デモ用のAI。APIキーなしで討論の流れを試すために、定型文を組み立てて返す。"""
+"""デモ用のAI。APIキーなしで合議の流れを試すために、定型文を組み立てて返す。
+
+修正ラウンド1では各自が自分の観点から1行を書き足して修正版を出し、
+修正ラウンド2以降では承認する。これで「修正→全員の承認→完成」の流れが一通り見られる。
+"""
 
 from __future__ import annotations
 
@@ -9,30 +13,23 @@ from collections.abc import AsyncIterator
 from ..config import Settings
 from .base import Provider, ProviderStatus, TurnKind, TurnRequest
 
-_RATINGS = ["賛成", "条件付き賛成", "賛成", "反対"]
-_RATING_REASONS = {
-    "賛成": "懸念点にも配慮されており、現実的に進められる案だと考えます。",
-    "条件付き賛成": "方向性には賛成ですが、見直しの基準を数字で明記することを条件とします。",
-    "反対": "影響を受ける人々への対策が、まだ具体的になっていないと考えます。",
-}
-
-_PROPOSAL_FOCUS = [
-    ("小さな範囲で試行し、効果を検証してから広げる", "試行の範囲と期間"),
-    ("影響を受ける人々の声を聞く場を設けたうえで進める", "意見を集める方法"),
-    ("費用と効果の目標を数字で定め、定期的に見直す", "目標とする数字"),
-]
-
-_ARGUMENT_POINTS = [
-    "短期的な効果だけでなく、5年後、10年後にどのような影響が残るかを考える必要があります",
-    "影響を受ける人々の立場の違いを丁寧に見ていくことが欠かせません",
-    "費用と効果のバランスを、できるだけ具体的な数字で比べるべきです",
-    "小さく試して検証しながら広げる、段階的な進め方が現実的です",
-    "うまくいかなかったときに引き返せる仕組みを最初から用意しておくべきです",
+_PLAN_POINTS = [
+    "最初に結論を示し、そのあとで理由や詳しい説明を続ける構成",
+    "読み手がすぐに行動に移せる、具体的な例や手順",
+    "見落としやすい注意点や、よくある誤解への言及",
+    "専門用語を避けた、誰にでも伝わる言葉づかい",
+    "根拠となる考え方を示し、断定しすぎない書き方",
 ]
 
 
 def _pick(seed: str, items: list[str], offset: int = 0) -> str:
     return items[(zlib.crc32(seed.encode()) + offset) % len(items)]
+
+
+def _point(req: TurnRequest, offset: int = 0) -> str:
+    """参加者ごとに違う観点の文を選ぶ（名前の並び順で割り振るので、5人までは重ならない）。"""
+    everyone = sorted([*req.others, req.speaker_name])
+    return _PLAN_POINTS[(everyone.index(req.speaker_name) + offset) % len(_PLAN_POINTS)]
 
 
 class MockProvider(Provider):
@@ -47,58 +44,65 @@ class MockProvider(Provider):
 
     async def stream(self, req: TurnRequest) -> AsyncIterator[str]:
         text = _compose(req)
-        step = 3
+        step = 4
         for i in range(0, len(text), step):
             if self._delay:
                 await asyncio.sleep(self._delay)
             yield text[i : i + step]
 
 
+def _short(text: str, limit: int = 30) -> str:
+    one_line = " ".join(text.split())
+    return one_line if len(one_line) <= limit else one_line[:limit] + "…"
+
+
 def _compose(req: TurnRequest) -> str:
-    topic = req.topic
-    # 立場の説明は最初の一文だけを引用する（例：「議題に前向きな立場」）
-    stance = (req.stance.split("。")[0] if req.stance else "") or "特に立場を決めず、自分の考えで論じる"
+    # 観点の説明は最初の一文だけを使う（例：「事実関係と論理の正しさを重視する」）
+    stance = (req.stance.split("。")[0] if req.stance else "") or "全体のバランス"
     others = req.others or ["ほかの参加者"]
-    other = _pick(req.speaker_name + str(req.round), others)
+    other = _pick(req.speaker_name, others)
 
-    if req.kind == TurnKind.ARGUMENT:
-        point = _pick(req.speaker_name, _ARGUMENT_POINTS, req.round)
-        if req.round <= 1:
-            text = (
-                f"私は「{stance}」という立場から発言します。\n\n"
-                f"「{topic}」を考えるうえで、{point}。"
-                "議論が理想論だけで終わらないよう、現実の制約も踏まえて考えたいと思います。"
-            )
-        else:
-            text = (
-                f"{other}さんのご意見には、うなずける部分が多いと感じました。"
-                "ただ、前提となっている条件については、もう少し慎重に確かめる必要があると思います。\n\n"
-                f"私の「{stance}」という立場から付け加えると、{point}。"
-                "この点を押さえれば、お互いの主張はかなり近づけるのではないでしょうか。"
-            )
-        if req.asks_continue_vote:
-            # 第1ラウンドでは続行、それ以降は参加者によって判断が分かれる
-            stop = req.round >= 2 and zlib.crc32(req.speaker_name.encode()) % 2 == 0
-            text += "\n\n【終了】" if stop else "\n\n【継続】"
-        return text
-
-    if req.kind == TurnKind.PROPOSAL:
-        action, issue = _PROPOSAL_FOCUS[zlib.crc32(req.speaker_name.encode()) % len(_PROPOSAL_FOCUS)]
+    if req.kind == TurnKind.PLANNING:
+        point = _point(req)
         return (
-            f"**結論**\n「{topic}」については、{action}。\n\n"
-            "**合意できる点**\n"
-            "- 一律に決めず、状況に応じて判断すること\n"
-            f"- 「{stance}」という観点も含め、複数の立場の懸念に応えること\n\n"
-            "**残る相違点**\n"
-            "- どこまでのリスクを許容するか\n\n"
-            "**今後の課題**\n"
-            f"- {issue}を具体的に決めること\n\n"
-            "（これはデモAIによる定型の案です。実際のAIを使うには、APIキーを設定してください。）"
+            f"「{stance}」という観点から意見を述べます。\n\n"
+            f"このプロンプトには、{point}が欠かせないと考えます。"
+            f"{other}さんの意見とも両立できるはずなので、構成の中でうまく組み合わせましょう。"
         )
 
-    # EVALUATION
-    lines = []
-    for no in req.proposal_numbers:
-        rating = _pick(f"{req.speaker_name}-{no}", _RATINGS)
-        lines.append(f"案{no}：【{rating}】{_RATING_REASONS[rating]}")
-    return "\n".join(lines)
+    if req.kind == TurnKind.DRAFT:
+        return (
+            f"## {_short(req.user_prompt)}\n\n"
+            "**要点**\n"
+            "- まず結論として、目的をはっきりさせたうえで、小さく始めて確かめながら進めるのがよいでしょう。\n"
+            "- 判断に迷ったときは、影響を受ける人の立場から考え直します。\n\n"
+            "**詳しく**\n"
+            "最初に目的と、うまくいったかどうかを判断する基準を決めます。"
+            "次に、範囲を限定して試し、結果を見て進め方を調整します。\n\n"
+            "**まとめ**\n"
+            "目的、基準、小さな試行の3つをそろえることが、確実に前へ進むための近道です。\n\n"
+            "（これはデモAIによる定型の回答です。実際のAIを使うには、APIキーを設定してください。）"
+        )
+
+    # REVISION
+    if req.round >= 2:
+        return (
+            "【意見】\n"
+            f"{other}さんの修正で、ほかの観点とのバランスがよくなりました。"
+            f"「{stance}」という観点から見ても、このまま完成としてよい内容です。\n\n"
+            "【判断】\n承認"
+        )
+    addition = f"- {stance}という観点から：{_point(req, 2)}も意識します。"
+    lines = req.current_draft.splitlines()
+    try:
+        insert_at = next(i for i, line in enumerate(lines) if line.startswith("**詳しく**")) - 1
+    except StopIteration:
+        insert_at = len(lines)
+    revised = "\n".join(lines[:insert_at] + [addition] + lines[insert_at:])
+    return (
+        "【意見】\n"
+        f"全体の構成はわかりやすいと思います。ただ、「{stance}」という観点がまだ弱いので、"
+        "要点に1行を加えました。ほかの部分は変えていません。\n\n"
+        "【判断】\n修正\n\n"
+        f"【修正版】\n{revised}"
+    )
