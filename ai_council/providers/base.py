@@ -14,14 +14,11 @@ from enum import Enum
 
 
 class TurnKind(str, Enum):
-    """発言の種類。"""
+    """発言の種類。どの種類の発言も、参加者全員が同じ条件で行う。"""
 
-    OPENING = "opening"  # 司会：開会と論点提示
-    ARGUMENT = "argument"  # 討論者：主張・反論
-    INTERIM = "interim"  # 司会：ラウンドごとの中間整理と継続判定
-    PROPOSAL = "proposal"  # 司会：結論案
-    FINAL = "final"  # 討論者：結論案への賛否
-    CONCLUSION = "conclusion"  # 司会：最終結論
+    ARGUMENT = "argument"  # ラウンドでの主張・応答
+    PROPOSAL = "proposal"  # 結論案（全員が同時に、互いの案を見ずに作る）
+    EVALUATION = "evaluation"  # 自分以外の結論案への匿名評価
 
 
 @dataclass(frozen=True)
@@ -40,6 +37,8 @@ class TurnRequest:
     round: int = 0
     total_rounds: int = 0
     others: list[str] = field(default_factory=list)
+    asks_continue_vote: bool = False  # 発言の最後に【継続】【終了】を求めているか
+    proposal_numbers: list[int] = field(default_factory=list)  # 評価する案の番号
 
 
 @dataclass(frozen=True)

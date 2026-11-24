@@ -5,6 +5,7 @@ import json
 from fastapi.testclient import TestClient
 
 from ai_council.main import create_app
+from ai_council.providers import ProviderStatus
 
 from .conftest import ScriptedProvider
 
@@ -14,8 +15,6 @@ class UnavailableProvider(ScriptedProvider):
     label = "オフライン"
 
     async def status(self):
-        from ai_council.providers import ProviderStatus
-
         return ProviderStatus(False, "APIキーが未設定です", ["x"], "x")
 
 
@@ -27,8 +26,7 @@ def body(provider="scripted", **overrides):
     data = {
         "topic": "テストの議題",
         "rounds": 1,
-        "moderator": {"name": "議長", "provider": provider},
-        "debaters": [{"name": "A", "provider": provider}, {"name": "B", "provider": provider}],
+        "participants": [{"name": "A", "provider": provider}, {"name": "B", "provider": provider}],
     }
     data.update(overrides)
     return data
@@ -65,7 +63,10 @@ def test_debate_streams_events_and_uses_default_model():
         events = parse_sse(res.read().decode())
 
     assert events[0]["type"] == "debate_start"
-    assert {p["model"] for p in events[0]["participants"]} == {"scripted-1"}
+    participants = events[0]["participants"]
+    assert [p["id"] for p in participants] == ["p1", "p2"]
+    assert {p["model"] for p in participants} == {"scripted-1"}
+    assert all("role" not in p for p in participants)  # 役割による区別はない
     assert events[-1]["type"] == "debate_end"
     assert events[-1]["status"] == "completed"
 

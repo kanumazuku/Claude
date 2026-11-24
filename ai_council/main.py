@@ -53,18 +53,17 @@ def create_app(registry: dict[str, Provider] | None = None) -> FastAPI:
     async def start_debate(cfg: DebateConfig) -> StreamingResponse:
         found = await statuses()
 
-        def seat(seat_id: str, role: str, p: ParticipantConfig) -> Seat:
+        def seat(seat_id: str, p: ParticipantConfig) -> Seat:
             provider = providers.get(p.provider)
             if provider is None:
                 raise HTTPException(400, f"「{p.name}」のAI「{p.provider}」は存在しません。")
             st = found[p.provider]
             if not st.available:
                 raise HTTPException(400, f"「{p.name}」に割り当てた{provider.label}は使えません：{st.reason}")
-            return Seat(seat_id, role, p, provider, p.model or st.default_model)
+            return Seat(seat_id, p, provider, p.model or st.default_model)
 
-        moderator = seat("moderator", "moderator", cfg.moderator)
-        debaters = [seat(f"d{i}", "debater", d) for i, d in enumerate(cfg.debaters, start=1)]
-        runner = DebateRunner(cfg, moderator, debaters)
+        seats = [seat(f"p{i}", p) for i, p in enumerate(cfg.participants, start=1)]
+        runner = DebateRunner(cfg, seats)
 
         return StreamingResponse(
             _sse(runner.run()),

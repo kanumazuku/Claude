@@ -9,7 +9,18 @@ from collections.abc import AsyncIterator
 from ..config import Settings
 from .base import Provider, ProviderStatus, TurnKind, TurnRequest
 
-_VOTES = ["賛成", "条件付き賛成", "賛成", "反対"]
+_RATINGS = ["賛成", "条件付き賛成", "賛成", "反対"]
+_RATING_REASONS = {
+    "賛成": "懸念点にも配慮されており、現実的に進められる案だと考えます。",
+    "条件付き賛成": "方向性には賛成ですが、見直しの基準を数字で明記することを条件とします。",
+    "反対": "影響を受ける人々への対策が、まだ具体的になっていないと考えます。",
+}
+
+_PROPOSAL_FOCUS = [
+    ("小さな範囲で試行し、効果を検証してから広げる", "試行の範囲と期間"),
+    ("影響を受ける人々の声を聞く場を設けたうえで進める", "意見を集める方法"),
+    ("費用と効果の目標を数字で定め、定期的に見直す", "目標とする数字"),
+]
 
 _ARGUMENT_POINTS = [
     "短期的な効果だけでなく、5年後、10年後にどのような影響が残るかを考える必要があります",
@@ -50,73 +61,44 @@ def _compose(req: TurnRequest) -> str:
     others = req.others or ["ほかの参加者"]
     other = _pick(req.speaker_name + str(req.round), others)
 
-    if req.kind == TurnKind.OPENING:
-        return (
-            f"ただいまから「{topic}」について討論を始めます。\n\n"
-            "今回は、次の3つの論点を中心に議論していきましょう。\n\n"
-            "1. **目的**：そもそも何を実現したいのか\n"
-            "2. **影響**：誰に、どのような良い影響と悪い影響があるのか\n"
-            "3. **進め方**：実現するとしたら、どのような条件や手順が必要か\n\n"
-            f"それでは第1ラウンドです。{'、'.join(others)}の順に、まずはご自身の立場を述べてください。"
-        )
-
     if req.kind == TurnKind.ARGUMENT:
         point = _pick(req.speaker_name, _ARGUMENT_POINTS, req.round)
         if req.round <= 1:
-            return (
+            text = (
                 f"私は「{stance}」という立場から発言します。\n\n"
                 f"「{topic}」を考えるうえで、{point}。"
                 "議論が理想論だけで終わらないよう、現実の制約も踏まえて考えたいと思います。"
             )
-        return (
-            f"{other}さんのご意見には、うなずける部分が多いと感じました。"
-            "ただ、前提となっている条件については、もう少し慎重に確かめる必要があると思います。\n\n"
-            f"私の「{stance}」という立場から付け加えると、{point}。"
-            "この点を押さえれば、お互いの主張はかなり近づけるのではないでしょうか。"
-        )
-
-    if req.kind == TurnKind.INTERIM:
-        return (
-            f"第{req.round}ラウンドを整理します。\n\n"
-            "**合意しつつある点**\n"
-            "- 一律に決めるのではなく、状況に応じた判断が必要だという認識は共有されています。\n\n"
-            "**意見が分かれている点**\n"
-            "- どこまでのリスクを許容するかについては、まだ隔たりがあります。\n\n"
-            f"次のラウンドでは、「どのような条件がそろえば{topic}に前向きになれるか」に焦点を当ててください。\n\n"
-            "【判定】継続"
-        )
+        else:
+            text = (
+                f"{other}さんのご意見には、うなずける部分が多いと感じました。"
+                "ただ、前提となっている条件については、もう少し慎重に確かめる必要があると思います。\n\n"
+                f"私の「{stance}」という立場から付け加えると、{point}。"
+                "この点を押さえれば、お互いの主張はかなり近づけるのではないでしょうか。"
+            )
+        if req.asks_continue_vote:
+            # 第1ラウンドでは続行、それ以降は参加者によって判断が分かれる
+            stop = req.round >= 2 and zlib.crc32(req.speaker_name.encode()) % 2 == 0
+            text += "\n\n【終了】" if stop else "\n\n【継続】"
+        return text
 
     if req.kind == TurnKind.PROPOSAL:
+        action, issue = _PROPOSAL_FOCUS[zlib.crc32(req.speaker_name.encode()) % len(_PROPOSAL_FOCUS)]
         return (
-            "ここまでの議論を踏まえ、結論案を提示します。\n\n"
-            f"**結論案**：「{topic}」については、目的と効果を検証できる範囲で段階的に進める。"
-            "あわせて、影響を受ける人々への配慮と、うまくいかない場合に見直す仕組みを用意する。\n\n"
-            "皆さん、この結論案に賛成か反対か、理由とあわせてお聞かせください。"
+            f"**結論**\n「{topic}」については、{action}。\n\n"
+            "**合意できる点**\n"
+            "- 一律に決めず、状況に応じて判断すること\n"
+            f"- 「{stance}」という観点も含め、複数の立場の懸念に応えること\n\n"
+            "**残る相違点**\n"
+            "- どこまでのリスクを許容するか\n\n"
+            "**今後の課題**\n"
+            f"- {issue}を具体的に決めること\n\n"
+            "（これはデモAIによる定型の案です。実際のAIを使うには、APIキーを設定してください。）"
         )
 
-    if req.kind == TurnKind.FINAL:
-        vote = _pick(req.speaker_name, _VOTES)
-        reasons = {
-            "賛成": [
-                "段階的に検証する進め方であれば、私が気にしていた点にも十分に応えられると考えます。",
-                "議論を通じて懸念点が整理され、現実的な案にまとまったと感じます。",
-            ],
-            "条件付き賛成": ["方向性には賛成ですが、見直しの基準を具体的な数字で決めておくことを条件とします。"],
-            "反対": ["議論は深まりましたが、懸念している影響への対策がまだ十分とは言えないと考えます。"],
-        }
-        return f"【{vote}】{_pick(req.speaker_name, reasons[vote], 1)}"
-
-    # CONCLUSION
-    return (
-        "討論の結果をまとめます。\n\n"
-        "**結論**\n"
-        f"「{topic}」は、段階的に検証しながら進めることで合意しました。\n\n"
-        "**合意した点**\n"
-        "- 目的と効果を検証できる形で小さく始めること\n"
-        "- 影響を受ける人々への配慮を欠かさないこと\n\n"
-        "**残った相違点**\n"
-        "- 許容できるリスクの大きさ、見直しの具体的な基準\n\n"
-        "**今後の課題**\n"
-        "- 見直しの基準を数字で定め、定期的に検証すること\n\n"
-        "（これはデモAIによる定型の発言です。実際のAIを使うには、APIキーを設定してください。）"
-    )
+    # EVALUATION
+    lines = []
+    for no in req.proposal_numbers:
+        rating = _pick(f"{req.speaker_name}-{no}", _RATINGS)
+        lines.append(f"案{no}：【{rating}】{_RATING_REASONS[rating]}")
+    return "\n".join(lines)

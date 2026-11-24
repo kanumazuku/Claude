@@ -176,7 +176,6 @@ input[type="text"]:focus, select:focus, textarea:focus {
   background: var(--surface-2);
 }
 .seat-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
-.seat[data-role="moderator"] .seat-row { grid-template-columns: 1fr 1fr; }
 .seat input, .seat select, .seat textarea { font-size: 13px; padding: 6px 8px; }
 .icon-btn {
   width: 32px;
@@ -254,18 +253,19 @@ input[type="text"]:focus, select:focus, textarea:focus {
   letter-spacing: 0.06em;
 }
 .phase::before, .phase::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.phase small { font-weight: 400; letter-spacing: 0; }
 
 .msg { display: grid; grid-template-columns: 36px 1fr; gap: 12px; margin: 14px 0; }
 .msg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .msg-name { font-weight: 700; }
 .msg-meta { font-size: 12px; color: var(--muted); }
-.role-badge {
+.proposal-tag {
   font-size: 11px;
   font-weight: 700;
-  padding: 0 6px;
+  padding: 0 7px;
   border-radius: 4px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: var(--accent);
+  color: var(--accent-text);
 }
 .msg-body {
   margin-top: 4px;
@@ -275,7 +275,6 @@ input[type="text"]:focus, select:focus, textarea:focus {
   border: 1px solid var(--border);
   overflow-wrap: anywhere;
 }
-.msg.moderator .msg-body { background: transparent; }
 .msg-body p { margin: 0 0 0.6em; }
 .msg-body p:last-child { margin-bottom: 0; }
 .msg-body ul, .msg-body ol { margin: 0.2em 0 0.6em; padding-left: 1.4em; }
@@ -300,15 +299,9 @@ input[type="text"]:focus, select:focus, textarea:focus {
 @keyframes blink { 50% { opacity: 0; } }
 @keyframes pulse { 50% { opacity: 0.4; } }
 
-.msg.conclusion .msg-body {
-  background: var(--surface);
-  border: 2px solid var(--accent);
-  border-radius: 12px;
-}
-
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .vote {
   display: inline-block;
-  margin-top: 6px;
   padding: 1px 10px;
   border-radius: 999px;
   font-size: 12px;
@@ -329,7 +322,24 @@ input[type="text"]:focus, select:focus, textarea:focus {
   color: var(--muted);
 }
 
-.tally { margin: 16px 0 8px 48px; }
+.result { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 12px 48px; }
+.score-row { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.score-row.adopted { border: 2px solid var(--accent); }
+.score-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 6px; font-size: 14px; }
+.adopted-badge { font-size: 12px; font-weight: 700; color: var(--accent); }
+.support { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.result .muted { margin: 0; font-size: 12px; }
+
+.conclusion-card {
+  margin: 16px 0 8px;
+  padding: 16px 18px;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.conclusion-card h3 { margin: 0; font-size: 16px; }
+.conclusion-card > .muted { margin: 2px 0 10px; }
+.conclusion-card .msg-body { margin: 0; padding: 0; border: none; background: transparent; }
 .tally-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
 .tally-bar span { display: block; height: 100%; }
 .tally-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 12px; color: var(--muted); }
@@ -356,6 +366,6 @@ input[type="text"]:focus, select:focus, textarea:focus {
 @media (max-width: 520px) {
   .msg { grid-template-columns: 28px 1fr; gap: 8px; }
   .msg .avatar { width: 28px; height: 28px; font-size: 13px; }
-  .notice, .tally { margin-left: 36px; }
+  .notice, .result { margin-left: 36px; }
   .seat-row { grid-template-columns: 1fr 1fr 32px; }
 }

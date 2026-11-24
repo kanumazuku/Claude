@@ -18,22 +18,22 @@ const TOPIC_EXAMPLES = [
   "リモートワークを働き方の基本にすべきか",
 ];
 
-const DEFAULT_MODERATOR = { name: "議長", stance: "落ち着いて公平に議論を整理する。" };
-const DEFAULT_DEBATERS = [
+const PRESET_PARTICIPANTS = [
   { name: "推進派", stance: "議題に前向きな立場。新しい挑戦がもたらす可能性や利点を重視する。" },
   { name: "慎重派", stance: "議題に慎重な立場。リスクや副作用、影響を受ける人への配慮を重視する。" },
   { name: "現実派", stance: "中立的な立場。費用、実現可能性、具体的な実行手順を重視する。" },
-];
-const EXTRA_DEBATERS = [
   { name: "当事者目線", stance: "議題によって最も影響を受ける人の目線で、生活の実感から意見を述べる。" },
   { name: "データ重視", stance: "統計や研究結果など、客観的な根拠を何より重視する。" },
+  { name: "長期視点", stance: "10年、20年先の社会への影響を重視して考える。" },
 ];
+const DEFAULT_COUNT = 3;
 
-const MIN_DEBATERS = 2;
-const MAX_DEBATERS = 5;
-const STORAGE_KEY = "ai-council-settings-v1";
+const MIN_PARTICIPANTS = 2;
+const MAX_PARTICIPANTS = 6;
+const STORAGE_KEY = "ai-council-settings-v2";
+const OLD_STORAGE_KEY = "ai-council-settings-v1";
 
-const VOTE_CLASS = { 賛成: "agree", 条件付き賛成: "cond", 反対: "oppose", 不明: "unknown" };
+const RATING_CLASS = { 賛成: "agree", 条件付き賛成: "cond", 反対: "oppose", 不明: "unknown" };
 
 // ---- 状態 ---------------------------------------------------------------
 
@@ -64,7 +64,7 @@ async function init() {
   });
   $("debateForm").addEventListener("input", saveSettings);
   $("debateForm").addEventListener("change", saveSettings);
-  $("addDebater").addEventListener("click", addDebater);
+  $("addParticipant").addEventListener("click", addParticipant);
   $("stopBtn").addEventListener("click", () => controller?.abort());
   $("copyBtn").addEventListener("click", copyMinutes);
   $("downloadBtn").addEventListener("click", downloadMinutes);
@@ -115,9 +115,8 @@ function defaultProvider(index) {
   return avail[index % avail.length];
 }
 
-function createSeat(data, role) {
+function createSeat(data) {
   const node = $("seatTemplate").content.firstElementChild.cloneNode(true);
-  node.dataset.role = role;
   const name = node.querySelector(".seat-name");
   const select = node.querySelector(".seat-provider");
   const model = node.querySelector(".seat-model");
@@ -152,44 +151,35 @@ function createSeat(data, role) {
   select.value = data.provider;
   model.value = data.model || "";
   stance.value = data.stance || "";
-  stance.placeholder = role === "moderator" ? "司会の個性（例：落ち着いて公平に整理する）" : "立場・個性（例：慎重派。リスクを重視する）";
   applyProvider();
 
   select.addEventListener("change", () => {
     model.value = "";
     applyProvider();
   });
-
-  if (role === "moderator") {
-    remove.remove();
-  } else {
-    remove.addEventListener("click", () => {
-      node.remove();
-      refreshSeatButtons();
-      saveSettings();
-    });
-  }
+  remove.addEventListener("click", () => {
+    node.remove();
+    refreshSeatButtons();
+    saveSettings();
+  });
   return node;
 }
 
 function refreshSeatButtons() {
-  const seats = $("debaterSlots").children;
+  const seats = $("participantSlots").children;
   for (const seat of seats) {
-    seat.querySelector(".seat-remove").disabled = seats.length <= MIN_DEBATERS;
+    seat.querySelector(".seat-remove").disabled = seats.length <= MIN_PARTICIPANTS || Boolean(controller);
   }
-  $("addDebater").disabled = seats.length >= MAX_DEBATERS || Boolean(controller);
+  $("addParticipant").disabled = seats.length >= MAX_PARTICIPANTS || Boolean(controller);
 }
 
-function addDebater() {
-  const slots = $("debaterSlots");
+function addParticipant() {
+  const slots = $("participantSlots");
   const count = slots.children.length;
-  if (count >= MAX_DEBATERS) return;
-  const used = new Set(readSeats(slots).map((s) => s.name));
-  const preset = [...DEFAULT_DEBATERS, ...EXTRA_DEBATERS].find((d) => !used.has(d.name)) || {
-    name: `討論者${count + 1}`,
-    stance: "",
-  };
-  slots.append(createSeat({ ...preset, provider: defaultProvider(count + 1) }, "debater"));
+  if (count >= MAX_PARTICIPANTS) return;
+  const used = new Set(readSeats().map((s) => s.name));
+  const preset = PRESET_PARTICIPANTS.find((d) => !used.has(d.name)) || { name: `参加者${count + 1}`, stance: "" };
+  slots.append(createSeat({ ...preset, provider: defaultProvider(count) }));
   refreshSeatButtons();
   saveSettings();
 }
@@ -203,8 +193,8 @@ function readSeat(node) {
   };
 }
 
-function readSeats(container) {
-  return [...container.children].map(readSeat);
+function readSeats() {
+  return [...$("participantSlots").children].map(readSeat);
 }
 
 // ---- 設定の保存と復元 -------------------------------------------------------
@@ -215,8 +205,7 @@ function readForm() {
     rounds: Number($("rounds").value),
     max_chars: Number($("maxChars").value),
     early_stop: $("earlyStop").checked,
-    moderator: readSeat($("moderatorSlot").firstElementChild),
-    debaters: readSeats($("debaterSlots")),
+    participants: readSeats(),
   };
 }
 
@@ -230,10 +219,15 @@ function saveSettings() {
 
 function loadSaved() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (saved) return saved;
+    // 司会がいた以前の版の設定は、討論者だけを参加者として引き継ぐ
+    const old = JSON.parse(localStorage.getItem(OLD_STORAGE_KEY) || "null");
+    if (old && Array.isArray(old.debaters)) return { ...old, participants: old.debaters };
   } catch {
-    return null;
+    // 読めない場合は既定の設定にする
   }
+  return null;
 }
 
 // 保存時に使えたAIが今は使えない場合は、使えるAIに置き換える。
@@ -244,14 +238,10 @@ function usableSeat(seat, index) {
 
 function restoreOrDefault() {
   const saved = loadSaved();
-  const valid = saved && saved.moderator && Array.isArray(saved.debaters) && saved.debaters.length >= MIN_DEBATERS;
-
-  const moderator = valid
-    ? usableSeat(saved.moderator, 0)
-    : { ...DEFAULT_MODERATOR, provider: defaultProvider(0) };
-  const debaters = valid
-    ? saved.debaters.slice(0, MAX_DEBATERS).map((d, i) => usableSeat(d, i + 1))
-    : DEFAULT_DEBATERS.map((d, i) => ({ ...d, provider: defaultProvider(i + 1) }));
+  const valid = saved && Array.isArray(saved.participants) && saved.participants.length >= MIN_PARTICIPANTS;
+  const participants = valid
+    ? saved.participants.slice(0, MAX_PARTICIPANTS).map(usableSeat)
+    : PRESET_PARTICIPANTS.slice(0, DEFAULT_COUNT).map((d, i) => ({ ...d, provider: defaultProvider(i) }));
 
   if (valid) {
     $("topic").value = saved.topic || "";
@@ -259,9 +249,7 @@ function restoreOrDefault() {
     $("maxChars").value = String(saved.max_chars || 300);
     $("earlyStop").checked = saved.early_stop !== false;
   }
-
-  $("moderatorSlot").replaceChildren(createSeat(moderator, "moderator"));
-  $("debaterSlots").replaceChildren(...debaters.map((d) => createSeat(d, "debater")));
+  $("participantSlots").replaceChildren(...participants.map(createSeat));
   refreshSeatButtons();
 }
 
@@ -269,7 +257,7 @@ function restoreOrDefault() {
 
 function validate(cfg) {
   if (!cfg.topic) return "議題を入力してください。";
-  const names = [cfg.moderator.name, ...cfg.debaters.map((d) => d.name)];
+  const names = cfg.participants.map((p) => p.name);
   if (names.some((n) => !n)) return "参加者の名前を入力してください。";
   if (new Set(names).size !== names.length) return "参加者の名前が重複しています。";
   return "";
@@ -384,7 +372,7 @@ async function readEvents(body, onEvent) {
 // ---- 討論の表示 -------------------------------------------------------------
 
 function resetDebateView(cfg) {
-  debate = { cfg, seats: {}, turns: {}, lastTurnOf: {}, log: [], startedAt: new Date(), ended: false };
+  debate = { cfg, seats: {}, turns: {}, lastTurnOf: {}, proposals: {}, log: [], startedAt: new Date(), ended: false };
   $("emptyState").hidden = true;
   $("debateView").hidden = false;
   $("debateTopic").textContent = cfg.topic;
@@ -400,8 +388,7 @@ function handleEvent(ev) {
       renderRoster(ev.participants);
       break;
     case "phase":
-      appendPhase(ev.title);
-      debate.log.push({ type: "phase", title: ev.title });
+      appendPhase(ev);
       break;
     case "turn_start":
       startTurn(ev);
@@ -412,14 +399,20 @@ function handleEvent(ev) {
     case "turn_end":
       endTurn(ev);
       break;
-    case "judgment":
-      appendNotice(judgmentText(ev));
+    case "continue_vote":
+      addChips(ev.speaker_id, [ev.decision === "stop" ? ["終了に1票", "oppose"] : ["継続に1票", "agree"]]);
       break;
-    case "vote":
-      showVote(ev);
+    case "round_decision":
+      appendNotice(decisionText(ev));
       break;
-    case "tally":
-      appendTally(ev.counts);
+    case "evaluation":
+      addChips(
+        ev.speaker_id,
+        ev.ratings.map((r) => [`案${r.proposal_no}：${r.rating}`, RATING_CLASS[r.rating] || "unknown"])
+      );
+      break;
+    case "result":
+      appendResult(ev);
       break;
     case "debate_end":
       endDebate(ev.status, ev.message);
@@ -427,10 +420,11 @@ function handleEvent(ev) {
   }
 }
 
-function judgmentText(ev) {
-  if (ev.decision === "continue") return "司会の判定：議論を続けます。";
-  if (ev.early_stop) return "司会の判定：論点が出尽くしたため、残りのラウンドを省略して結論案に進みます。";
-  return "司会は議論の終了を提案しましたが、設定に従ってラウンドを続けます。";
+function decisionText(ev) {
+  const count = `継続${ev.continue}票、終了${ev.stop}票`;
+  if (ev.decision === "continue") return `多数決（${count}）：議論を続けます。`;
+  if (ev.early_stop) return `多数決（${count}）：論点が出尽くしたと判断し、残りのラウンドを省略して結論案に進みます。`;
+  return `多数決（${count}）では終了が上回りましたが、設定に従ってラウンドを続けます。`;
 }
 
 function avatar(seat) {
@@ -445,20 +439,29 @@ function renderRoster(participants) {
   const list = $("roster");
   for (const p of participants) {
     const li = document.createElement("li");
-    const role = p.role === "moderator" ? "司会・" : "";
     const small = document.createElement("small");
-    small.textContent = `${role}${p.provider_label}`;
+    small.textContent = p.provider_label;
     small.title = p.model;
     li.append(avatar(p), document.createTextNode(p.name), small);
     list.append(li);
   }
 }
 
-function appendPhase(title) {
-  const el = document.createElement("div");
-  el.className = "phase";
-  el.textContent = title;
-  appendToTimeline(el);
+function appendPhase(ev) {
+  const wrap = document.createElement("div");
+  wrap.className = "phase";
+  const title = document.createElement("span");
+  title.textContent = ev.title;
+  wrap.append(title);
+  let detail = "";
+  if (ev.order) {
+    detail = `発言順：${ev.order.map((id) => debate.seats[id]?.name || id).join("→")}`;
+    const sub = document.createElement("small");
+    sub.textContent = detail;
+    wrap.append(sub);
+  }
+  appendToTimeline(wrap);
+  debate.log.push({ type: "phase", title: ev.title, detail });
 }
 
 function appendNotice(text) {
@@ -472,8 +475,7 @@ function appendNotice(text) {
 function startTurn(ev) {
   const seat = debate.seats[ev.speaker_id];
   const el = document.createElement("article");
-  el.className = `msg thinking ${seat.role}`;
-  if (ev.kind === "conclusion") el.classList.add("conclusion");
+  el.className = `msg thinking kind-${ev.kind}`;
   el.style.setProperty("--seat-color", PROVIDER_COLORS[seat.provider] || "var(--accent)");
 
   const main = document.createElement("div");
@@ -483,15 +485,15 @@ function startTurn(ev) {
   name.className = "msg-name";
   name.textContent = seat.name;
   head.append(name);
-  if (seat.role === "moderator") {
-    const badge = document.createElement("span");
-    badge.className = "role-badge";
-    badge.textContent = "司会";
-    head.append(badge);
+  if (ev.proposal_no) {
+    const tag = document.createElement("span");
+    tag.className = "proposal-tag";
+    tag.textContent = `案${ev.proposal_no}`;
+    head.append(tag);
   }
   const meta = document.createElement("span");
   meta.className = "msg-meta";
-  meta.textContent = `${ev.label}・${seat.provider_label}（${seat.model}）`;
+  meta.textContent = `${ev.proposal_no ? "結論案" : ev.label}・${seat.provider_label}（${seat.model}）`;
   head.append(meta);
 
   const body = document.createElement("div");
@@ -500,9 +502,10 @@ function startTurn(ev) {
   el.append(avatar(seat), main);
   appendToTimeline(el);
 
-  const entry = { type: "turn", seat, label: ev.label, kind: ev.kind, text: "", error: "", vote: "" };
+  const entry = { type: "turn", seat, label: ev.label, kind: ev.kind, text: "", error: "", chips: [] };
   debate.turns[ev.turn_id] = { el, body, main, entry, pending: false };
   debate.lastTurnOf[ev.speaker_id] = ev.turn_id;
+  if (ev.proposal_no) debate.proposals[ev.proposal_no] = { seat, entry };
   debate.log.push(entry);
 }
 
@@ -547,21 +550,86 @@ function endTurn(ev) {
   }
 }
 
-function showVote(ev) {
-  const turn = debate.turns[debate.lastTurnOf[ev.speaker_id]];
+function addChips(speakerId, chips) {
+  const turn = debate.turns[debate.lastTurnOf[speakerId]];
   if (!turn) return;
-  turn.entry.vote = ev.vote;
-  const chip = document.createElement("span");
-  chip.className = `vote v-${VOTE_CLASS[ev.vote] || "unknown"}`;
-  chip.textContent = ev.vote;
-  turn.main.append(chip);
+  const row = document.createElement("div");
+  row.className = "chip-row";
+  for (const [text, cls] of chips) {
+    const chip = document.createElement("span");
+    chip.className = `vote v-${cls}`;
+    chip.textContent = text;
+    row.append(chip);
+  }
+  turn.main.append(row);
+  turn.entry.chips.push(...chips.map(([text]) => text));
 }
 
-function appendTally(counts) {
+function appendResult(ev) {
+  const wrap = document.createElement("section");
+  wrap.className = "result";
+
+  for (const p of ev.proposals) {
+    const author = debate.seats[p.author_id];
+    const row = document.createElement("div");
+    row.className = "score-row" + (p.no === ev.adopted ? " adopted" : "");
+    const head = document.createElement("div");
+    head.className = "score-head";
+    const tag = document.createElement("span");
+    tag.className = "proposal-tag";
+    tag.textContent = `案${p.no}`;
+    const who = document.createElement("span");
+    who.textContent = `${author?.name || "?"}の案`;
+    head.append(tag, who);
+    if (p.no === ev.adopted) {
+      const badge = document.createElement("span");
+      badge.className = "adopted-badge";
+      badge.textContent = "採択";
+      head.append(badge);
+    }
+    const support = document.createElement("span");
+    support.className = "support";
+    support.textContent = `支持率 ${p.support}%`;
+    head.append(support);
+    row.append(head, tallyBar(p.counts));
+    wrap.append(row);
+  }
+
+  const note = document.createElement("p");
+  note.className = "muted";
+  note.textContent =
+    "支持率は、賛成を2点、条件付き賛成を1点、反対と不明を0点として、満点に対する割合です。自分の案は評価していません。";
+  wrap.append(note);
+  appendToTimeline(wrap);
+
+  if (ev.tie_break) appendNotice("支持率が同じ案があったため、くじ引きで採択する案を決めました。");
+
+  let conclusion = null;
+  if (ev.adopted == null) {
+    appendNotice("どの案も支持を得られなかったため、結論は採択されませんでした。");
+  } else {
+    const adopted = ev.proposals.find((p) => p.no === ev.adopted);
+    const author = debate.seats[adopted.author_id];
+    const card = document.createElement("article");
+    card.className = "conclusion-card";
+    const h = document.createElement("h3");
+    h.textContent = "採択された結論";
+    const meta = document.createElement("p");
+    meta.className = "muted";
+    meta.textContent = `案${adopted.no}（${author?.name || "?"}の案）・支持率 ${adopted.support}%`;
+    const body = document.createElement("div");
+    body.className = "msg-body";
+    body.innerHTML = renderMarkdown(ev.text);
+    card.append(h, meta, body);
+    appendToTimeline(card);
+    conclusion = { no: adopted.no, author: author?.name || "?", support: adopted.support, text: ev.text };
+  }
+  debate.log.push({ type: "result", proposals: ev.proposals, tieBreak: ev.tie_break, conclusion });
+}
+
+function tallyBar(counts) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  if (!total) return;
-  const wrap = document.createElement("div");
-  wrap.className = "tally";
+  const box = document.createElement("div");
   const bar = document.createElement("div");
   bar.className = "tally-bar";
   const legend = document.createElement("div");
@@ -569,17 +637,19 @@ function appendTally(counts) {
   for (const [label, n] of Object.entries(counts)) {
     if (!n) continue;
     const seg = document.createElement("span");
-    seg.className = `seg-${VOTE_CLASS[label] || "unknown"}`;
+    seg.className = `seg-${RATING_CLASS[label] || "unknown"}`;
     seg.style.width = `${(n / total) * 100}%`;
     seg.title = `${label}：${n}`;
     bar.append(seg);
     const item = document.createElement("span");
-    item.innerHTML = `${escapeHtml(label)} <b>${n}</b>`;
+    item.append(document.createTextNode(`${label} `));
+    const b = document.createElement("b");
+    b.textContent = n;
+    item.append(b);
     legend.append(item);
   }
-  wrap.append(bar, legend);
-  appendToTimeline(wrap);
-  debate.log.push({ type: "tally", counts });
+  box.append(bar, legend);
+  return box;
 }
 
 function endDebate(status, message) {
@@ -618,22 +688,40 @@ function scrollToBottom() {
 
 function buildMinutes() {
   if (!debate) return "";
-  const lines = ["# AI合議室 議事録", "", `- 議題：${debate.cfg.topic}`, `- 日時：${debate.startedAt.toLocaleString("ja-JP")}`, "- 参加者："];
+  const lines = [
+    "# AI合議室 議事録",
+    "",
+    `- 議題：${debate.cfg.topic}`,
+    `- 日時：${debate.startedAt.toLocaleString("ja-JP")}`,
+    "- 参加者（全員が対等）：",
+  ];
   for (const seat of Object.values(debate.seats)) {
-    const role = seat.role === "moderator" ? "司会" : "討論者";
     const stance = seat.stance ? `、${seat.stance}` : "";
-    lines.push(`  - ${seat.name}（${role}、${seat.provider_label}：${seat.model}${stance}）`);
+    lines.push(`  - ${seat.name}（${seat.provider_label}：${seat.model}${stance}）`);
   }
   for (const item of debate.log) {
-    if (item.type === "phase") lines.push("", `## ${item.title}`);
-    if (item.type === "notice") lines.push("", `> ${item.text}`);
-    if (item.type === "tally") {
-      const summary = Object.entries(item.counts).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join("、");
-      lines.push("", `**賛否の集計**：${summary}`);
+    if (item.type === "phase") {
+      lines.push("", `## ${item.title}`);
+      if (item.detail) lines.push("", item.detail);
     }
+    if (item.type === "notice") lines.push("", `> ${item.text}`);
     if (item.type === "turn") {
-      lines.push("", `### ${item.seat.name}${item.vote ? `【${item.vote}】` : ""}`, "");
+      const tag = item.kind === "proposal" ? `（${item.label}）` : "";
+      lines.push("", `### ${item.seat.name}${tag}`, "");
       lines.push(item.error ? `（発言できませんでした：${item.error}）` : item.text || "（中断されました）");
+      if (item.chips.length) lines.push("", `→ ${item.chips.join("、")}`);
+    }
+    if (item.type === "result") {
+      lines.push("", "| 案 | 作成者 | 支持率 | 賛成 | 条件付き賛成 | 反対 | 不明 |", "|---|---|---|---|---|---|---|");
+      for (const p of item.proposals) {
+        const c = p.counts;
+        const name = debate.seats[p.author_id]?.name || "?";
+        lines.push(`| 案${p.no} | ${name} | ${p.support}% | ${c["賛成"]} | ${c["条件付き賛成"]} | ${c["反対"]} | ${c["不明"]} |`);
+      }
+      if (item.conclusion) {
+        const c = item.conclusion;
+        lines.push("", `## 採択された結論（案${c.no}・${c.author}の案・支持率${c.support}%）`, "", c.text);
+      }
     }
   }
   if (debate.result) lines.push("", "---", "", debate.result);
@@ -656,9 +744,9 @@ function downloadMinutes() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   const d = debate.startedAt;
-  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+  const pad = (n) => String(n).padStart(2, "0");
   a.href = url;
-  a.download = `議事録_${stamp}.md`;
+  a.download = `議事録_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.md`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

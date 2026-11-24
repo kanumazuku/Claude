@@ -12,7 +12,7 @@
       <span class="brand-mark" aria-hidden="true">合</span>
       <div>
         <h1>AI合議室</h1>
-        <p>さまざまなAIが討論し、合議で結論を出します</p>
+        <p>さまざまなAIが対等な立場で討論し、合議で結論を出します</p>
       </div>
     </div>
     <ul class="provider-status" id="providerStatus" aria-label="AIの接続状況"></ul>
@@ -50,17 +50,14 @@
         </div>
         <label class="check">
           <input type="checkbox" id="earlyStop" checked>
-          <span>司会が「論点は出尽くした」と判断したら、残りのラウンドを省略する</span>
+          <span>参加者の過半数が「論点は出尽くした」と判断したら、残りのラウンドを省略する</span>
         </label>
 
-        <h2 class="section-title">司会</h2>
-        <div id="moderatorSlot"></div>
-
         <div class="section-head">
-          <h2 class="section-title">討論者</h2>
-          <button type="button" class="link-btn" id="addDebater">＋追加</button>
+          <h2 class="section-title">参加者 <span class="muted">（全員が対等です）</span></h2>
+          <button type="button" class="link-btn" id="addParticipant">＋追加</button>
         </div>
-        <div id="debaterSlots" class="seat-list"></div>
+        <div id="participantSlots" class="seat-list"></div>
 
         <p class="form-error" id="formError" role="alert" hidden></p>
 
@@ -76,12 +73,13 @@
       <div class="empty" id="emptyState">
         <h2>討論の流れ</h2>
         <ol class="flow">
-          <li><strong>開会</strong>：司会が議題を整理し、論点を示します。</li>
-          <li><strong>ラウンド</strong>：討論者が順に主張し、互いに応答します。</li>
-          <li><strong>中間整理</strong>：司会が合意点と対立点をまとめ、続けるかどうかを判断します。</li>
-          <li><strong>結論案と最終意見</strong>：司会の結論案に、討論者が賛否を表明します。</li>
-          <li><strong>最終結論</strong>：司会が賛否を反映して結論をまとめます。</li>
+          <li><strong>ラウンド</strong>：参加者が順に主張し、互いの発言に応答します。発言順は毎ラウンド入れ替わります。</li>
+          <li><strong>継続の判断</strong>：全員が発言の最後に「続けるか、終えるか」を示し、多数決で決めます。</li>
+          <li><strong>結論案</strong>：全員が同時に、互いの案を見ずに結論案を作ります。</li>
+          <li><strong>相互評価</strong>：作成者を伏せた状態で、自分以外の案を賛成・条件付き賛成・反対で評価します。</li>
+          <li><strong>採択</strong>：最も支持を集めた案が結論になります。同点の場合はくじ引きで決めます。</li>
         </ol>
+        <p class="muted">司会や議長はいません。すべてのAIが同じ権利で議論に参加します。</p>
         <p class="muted">APIキーがなくても、「デモ」AIで流れを試せます。</p>
       </div>
 
@@ -108,10 +106,10 @@
       <div class="seat-row">
         <input class="seat-name" type="text" maxlength="20" aria-label="名前" placeholder="名前">
         <select class="seat-provider" aria-label="使うAI"></select>
-        <button type="button" class="icon-btn seat-remove" aria-label="この討論者を外す" title="外す">×</button>
+        <button type="button" class="icon-btn seat-remove" aria-label="この参加者を外す" title="外す">×</button>
       </div>
       <input class="seat-model" type="text" maxlength="100" aria-label="モデル" placeholder="モデル">
-      <textarea class="seat-stance" rows="2" maxlength="300" aria-label="立場・個性" placeholder="立場・個性"></textarea>
+      <textarea class="seat-stance" rows="2" maxlength="300" aria-label="立場・個性" placeholder="立場・個性（例：慎重派。リスクを重視する）"></textarea>
     </div>
   </template>
 

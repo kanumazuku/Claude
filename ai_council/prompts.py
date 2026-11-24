@@ -1,13 +1,18 @@
-"""AIに渡す指示文（プロンプト）。討論の進め方を変えたいときはここを編集する。"""
+"""AIに渡す指示文（プロンプト）。討論の進め方を変えたいときはここを編集する。
+
+参加者は全員が対等なので、システムプロンプトは全員共通の形で、
+違うのは名前と立場・個性だけにしている。
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .providers import TurnKind
 from .schemas import DebateConfig, ParticipantConfig
 
-VOTE_LABELS = ("賛成", "条件付き賛成", "反対")
+RATING_LABELS = ("賛成", "条件付き賛成", "反対")
+CONTINUE_MARK = "【継続】"
+STOP_MARK = "【終了】"
 
 
 @dataclass(frozen=True)
@@ -19,44 +24,32 @@ class Entry:
     text: str
 
 
-def moderator_system(cfg: DebateConfig) -> str:
-    persona = cfg.moderator.stance or "落ち着いて公平に議論を整理する。"
-    return f"""あなたは「AI合議室」という討論の場で司会を務める「{cfg.moderator.name}」です。
-あなたの個性：{persona}
-
-司会の役割：
-- 中立の立場で議論を整理し、参加者が建設的に合意を形成できるよう導いてください。
-- 自分の意見を強く主張したり、特定の参加者に肩入れしたりしないでください。
-- 参加者の発言を正確に要約し、名前を挙げて誰がどう述べたかを示してください。
-
-書き方のルール：
-- 日本語で書いてください。
-- 見出しや箇条書きは使ってかまいませんが、冗長にならないようにしてください。
-- 発言の冒頭に自分の名前や「司会：」などの見出しを付けないでください。本文だけを書いてください。"""
-
-
-def debater_system(cfg: DebateConfig, me: ParticipantConfig) -> str:
+def participant_system(cfg: DebateConfig, me: ParticipantConfig) -> str:
     stance = me.stance or "特に指定はありません。自分の考えで論じてください。"
-    others = "、".join(d.name for d in cfg.debaters if d.name != me.name)
-    return f"""あなたは「AI合議室」という討論の場に参加する討論者「{me.name}」です。
+    others = "、".join(p.name for p in cfg.participants if p.name != me.name)
+    return f"""あなたは「AI合議室」という合議の場に参加している「{me.name}」です。
 あなたの立場・個性：{stance}
-ほかの討論者：{others}
-司会：{cfg.moderator.name}
+ほかの参加者：{others}
 
-討論のルール：
-- 日本語で、話し言葉に近い自然な文体で発言してください。
-- 1回の発言は{cfg.max_chars}字程度に収めてください。
+この合議のしくみ：
+- 参加者は全員が対等です。司会や議長はおらず、誰か1人が議論を仕切ることはありません。
+- 発言の順番は、ラウンドごとに入れ替わります。
+- 議論を続けるかどうかは、参加者全員の判断の多数決で決まります。
+- 最後に全員が同時に結論案を出し、自分以外の案を作成者を伏せて評価します。最も支持を集めた案が結論として採択されます。
+
+発言のルール：
+- 日本語で、話し言葉に近い自然な文体で書いてください。
 - 自分の立場・個性を一貫して保ってください。
 - ほかの参加者の発言に触れるときは、名前を挙げて具体的に応答してください。
 - 事実と意見を区別し、根拠のない断定は避けてください。
-- 目的は相手を言い負かすことではなく、より良い結論に近づくことです。説得力のある反論を受けたら、主張を修正してもかまいません。
-- 発言の冒頭に自分の名前や見出しを付けないでください。本文だけを書いてください。"""
+- 目的は相手を言い負かすことではなく、全員でより良い結論に近づくことです。説得力のある意見には、立場が違っても同意してかまいません。
+- 冒頭に自分の名前や見出しを付けないでください。本文だけを書いてください。"""
 
 
 def render_context(cfg: DebateConfig, transcript: list[Entry]) -> str:
-    lines = [f"# 議題\n{cfg.topic}", "", "# 参加者", f"- 司会：{cfg.moderator.name}"]
-    for d in cfg.debaters:
-        lines.append(f"- 討論者：{d.name}（立場：{d.stance or '指定なし'}）")
+    lines = [f"# 議題\n{cfg.topic}", "", "# 参加者（全員が対等です）"]
+    for p in cfg.participants:
+        lines.append(f"- {p.name}（立場：{p.stance or '指定なし'}）")
     lines += ["", "# これまでの議事録"]
     if not transcript:
         lines.append("（まだ発言はありません）")
@@ -65,51 +58,55 @@ def render_context(cfg: DebateConfig, transcript: list[Entry]) -> str:
     return "\n".join(lines)
 
 
-def instruction(kind: TurnKind, cfg: DebateConfig, round_no: int = 0) -> str:
+def render_proposals(proposals: list[tuple[int, str]]) -> str:
+    """評価用に結論案を並べる。作成者の名前は出さない。"""
+    lines = ["# 結論案（作成者は伏せています）"]
+    for no, text in proposals:
+        lines += ["", f"## 案{no}", text.strip()]
+    return "\n".join(lines)
+
+
+def argument_instruction(cfg: DebateConfig, round_no: int, order: list[str], asks_vote: bool) -> str:
     n = cfg.max_chars
-    if kind == TurnKind.OPENING:
-        return (
-            "司会として討論を開会してください。議題の背景を簡潔に整理し、"
-            "この討論で扱うべき論点を2〜4個、番号付きで示してください。"
-            f"最後に、討論者に第1ラウンドの発言を促してください。全体で{n}字程度にしてください。"
+    order_text = "→".join(order)
+    if round_no <= 1:
+        body = (
+            f"第1ラウンドです（発言順：{order_text}）。議題について、あなたの立場からの主張を述べてください。"
+            f"根拠を2つ程度示してください。{n}字程度にしてください。"
         )
-    if kind == TurnKind.ARGUMENT:
-        if round_no <= 1:
-            return (
-                f"第1ラウンドです。あなたの立場から、議題についての主張を述べてください。"
-                f"根拠を2つ程度示してください。{n}字程度にしてください。"
-            )
+    else:
         last = "最終ラウンドです。" if round_no == cfg.rounds else ""
-        return (
-            f"第{round_no}ラウンドです。{last}司会の整理と、ほかの討論者の発言を踏まえて応答してください。"
-            "同意できる点は認め、反論すべき点には根拠を示して反論してください。"
+        body = (
+            f"第{round_no}ラウンドです（発言順：{order_text}）。{last}"
+            "これまでの発言を踏まえて応答してください。同意できる点は認め、反論すべき点には根拠を示してください。"
             f"合意に近づくための具体的な提案があれば述べてください。{n}字程度にしてください。"
         )
-    if kind == TurnKind.INTERIM:
-        return (
-            f"第{round_no}ラウンドが終わりました。司会として議論を整理してください。\n"
-            "1. 合意しつつある点\n2. 意見が分かれている点\n3. 次のラウンドで焦点を当てるべき問い\n"
-            f"を、{n}字程度で示してください。\n\n"
-            "最後の行には、判定を次のどちらか一方だけで書いてください。\n"
-            "- まだ議論を深める価値があるなら：【判定】継続\n"
-            "- 十分に合意が形成された、または論点が出尽くしたなら：【判定】終了"
+    if asks_vote:
+        body += (
+            "\n\n発言の最後の行には、議論をさらに続けるべきかどうかのあなたの判断を、次のどちらか一方だけで書いてください。"
+            "この判断は参加者全員の多数決に使われます。\n"
+            f"- まだ議論を深める価値があるなら：{CONTINUE_MARK}\n"
+            f"- 論点が出尽くし、結論案を出す段階だと思うなら：{STOP_MARK}"
         )
-    if kind == TurnKind.PROPOSAL:
-        return (
-            "議論はここまでです。司会として、これまでの議論を踏まえた「結論案」を提示してください。"
-            "合意できた点を中心に、意見が分かれた点にも配慮した、参加者が受け入れやすい案にしてください。"
-            f"最後に、討論者に結論案への賛否を求めてください。{n}字程度にしてください。"
-        )
-    if kind == TurnKind.FINAL:
-        return (
-            "司会が示した結論案に対するあなたの最終的な賛否を表明してください。"
-            "冒頭に【賛成】【条件付き賛成】【反対】のいずれか1つを書き、"
-            "続けて理由（条件付きの場合はその条件）を150字程度で述べてください。"
-        )
-    # CONCLUSION
+    return body
+
+
+def proposal_instruction(cfg: DebateConfig) -> str:
     return (
-        "司会として、討論の最終結論をまとめてください。結論案への各討論者の賛否を反映し、"
-        "次の見出しで整理してください。\n"
-        "**結論** / **合意した点** / **残った相違点** / **今後の課題**\n"
-        f"全体で{n + 200}字程度にしてください。"
+        "議論は以上です。これまでの議論を踏まえ、参加者全員が受け入れやすい結論案を書いてください。"
+        "自分の立場だけでなく、ほかの参加者の懸念にも応える案にしてください。"
+        "ほかの参加者も同時に結論案を書いており、あとで作成者を伏せて互いに評価します。\n"
+        "次の見出しで書いてください。\n"
+        "**結論** / **合意できる点** / **残る相違点** / **今後の課題**\n"
+        f"全体で{cfg.max_chars + 200}字程度にしてください。"
+    )
+
+
+def evaluation_instruction(numbers: list[int]) -> str:
+    targets = "、".join(f"案{n}" for n in numbers)
+    return (
+        f"上の結論案（{targets}）を、1つずつ評価してください。あなた自身の案は含まれていません。"
+        "作成者が誰かを推測せず、内容だけで公平に評価してください。\n"
+        "案ごとに1行ずつ、次の形式で書いてください。\n"
+        "案（番号）：【賛成】【条件付き賛成】【反対】のいずれか1つ　理由（条件付きの場合はその条件）を60字程度で"
     )
