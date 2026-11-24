@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI合議室</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">合</span>
+      <div>
+        <h1>AI合議室</h1>
+        <p>さまざまなAIが討論し、合議で結論を出します</p>
+      </div>
+    </div>
+    <ul class="provider-status" id="providerStatus" aria-label="AIの接続状況"></ul>
+  </header>
+
+  <main class="layout">
+    <!-- 設定 -->
+    <section class="panel settings" id="settings" aria-label="討論の設定">
+      <form id="debateForm" novalidate>
+        <div class="field">
+          <label for="topic">議題</label>
+          <textarea id="topic" rows="3" maxlength="500" placeholder="例：日本の企業は週休3日制を導入すべきか"></textarea>
+          <div class="chips" id="topicExamples"></div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="rounds">ラウンド数</label>
+            <select id="rounds">
+              <option value="1">1</option>
+              <option value="2" selected>2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="maxChars">発言の長さ</label>
+            <select id="maxChars">
+              <option value="200">短め</option>
+              <option value="300" selected>標準</option>
+              <option value="500">長め</option>
+            </select>
+          </div>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="earlyStop" checked>
+          <span>司会が「論点は出尽くした」と判断したら、残りのラウンドを省略する</span>
+        </label>
+
+        <h2 class="section-title">司会</h2>
+        <div id="moderatorSlot"></div>
+
+        <div class="section-head">
+          <h2 class="section-title">討論者</h2>
+          <button type="button" class="link-btn" id="addDebater">＋追加</button>
+        </div>
+        <div id="debaterSlots" class="seat-list"></div>
+
+        <p class="form-error" id="formError" role="alert" hidden></p>
+
+        <div class="actions">
+          <button type="submit" class="btn primary" id="startBtn">討論を始める</button>
+          <button type="button" class="btn danger" id="stopBtn" hidden>止める</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 討論 -->
+    <section class="panel stage" aria-label="討論の様子">
+      <div class="empty" id="emptyState">
+        <h2>討論の流れ</h2>
+        <ol class="flow">
+          <li><strong>開会</strong>：司会が議題を整理し、論点を示します。</li>
+          <li><strong>ラウンド</strong>：討論者が順に主張し、互いに応答します。</li>
+          <li><strong>中間整理</strong>：司会が合意点と対立点をまとめ、続けるかどうかを判断します。</li>
+          <li><strong>結論案と最終意見</strong>：司会の結論案に、討論者が賛否を表明します。</li>
+          <li><strong>最終結論</strong>：司会が賛否を反映して結論をまとめます。</li>
+        </ol>
+        <p class="muted">APIキーがなくても、「デモ」AIで流れを試せます。</p>
+      </div>
+
+      <div id="debateView" hidden>
+        <div class="debate-head">
+          <p class="eyebrow">議題</p>
+          <h2 id="debateTopic"></h2>
+          <ul class="roster" id="roster"></ul>
+        </div>
+        <div class="timeline" id="timeline" aria-live="polite"></div>
+        <div class="result-bar" id="resultBar" hidden>
+          <p id="resultMessage"></p>
+          <div class="result-actions">
+            <button type="button" class="btn" id="copyBtn">議事録をコピー</button>
+            <button type="button" class="btn" id="downloadBtn">議事録を保存</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <template id="seatTemplate">
+    <div class="seat">
+      <div class="seat-row">
+        <input class="seat-name" type="text" maxlength="20" aria-label="名前" placeholder="名前">
+        <select class="seat-provider" aria-label="使うAI"></select>
+        <button type="button" class="icon-btn seat-remove" aria-label="この討論者を外す" title="外す">×</button>
+      </div>
+      <input class="seat-model" type="text" maxlength="100" aria-label="モデル" placeholder="モデル">
+      <textarea class="seat-stance" rows="2" maxlength="300" aria-label="立場・個性" placeholder="立場・個性"></textarea>
+    </div>
+  </template>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
